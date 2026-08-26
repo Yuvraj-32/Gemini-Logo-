@@ -1,0 +1,13 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Static site: no server, no build step. Serves index.html from the repo root.
+services:
+  - type: web
+    name: sparkle-eraser
+    runtime: static
+    buildCommand: "echo No build step required"
+    staticPublishPath: .
+    pullRequestPreviewsEnabled: false
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
