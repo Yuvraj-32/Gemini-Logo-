@@ -19,6 +19,16 @@ Then just **upload an image** — detection and removal run automatically, and t
 
 If auto-detect ever misses, the **Fine-tune** panel provides manual brush, sensitivity, and edge-padding controls.
 
+## Video (`video.html`)
+
+Same detection + inpainting engine, applied to **every frame** of a video, with the audio kept.
+
+- **Pipeline:** demux the MP4 (mp4box.js) → decode frames (WebCodecs `VideoDecoder`) → clean each frame → re-encode H.264 (WebCodecs `VideoEncoder`) → mux video + **pass-through audio** into a new MP4 (mp4-muxer). Audio is copied unchanged, so it stays in sync and loses no quality.
+- **fps and resolution are preserved** — each output frame carries its source timestamp, so timing is exact.
+- The watermark position is usually fixed, so detection runs periodically (default: every 15 frames) and reuses the mask in between for speed. Lower the interval if the logo moves.
+- **Chrome / Edge (desktop) required** — the WebCodecs API isn't available in Safari or Firefox yet. Processing is offline (slower than real-time); a progress bar with an ETA is shown.
+- The two CDN libraries (`mp4box`, `mp4-muxer`, both MIT) load at runtime, so `video.html` must be served from a web host (Render, GitHub Pages) or opened locally in Chrome — it can't run inside the claude.ai artifact sandbox.
+
 ## Notes
 
 - The tool removes the **visible** sparkle only. Invisible provenance watermarks (e.g. SynthID) are unaffected.

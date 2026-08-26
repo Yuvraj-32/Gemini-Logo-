@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sparkle Eraser — Video</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+
+<!-- Demuxer + MP4 muxer (MIT). Loaded from CDN; needs a normal web host, not the sandboxed artifact. -->
+<script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.5/build/mp4-muxer.min.js"></script>
+
+<style>
+  :root{
+    --bg:#F4F3EF; --surface:#FFFFFF; --surface-2:#FAF9F5; --stage:#E9E7E0;
+    --text:#17181C; --muted:#63666F; --border:#E4E0D8; --border-strong:#D3CEC3;
+    --accent:#0FB1A0; --accent-strong:#0A8B7D; --accent-ink:#04231F;
+    --danger:#D2493B; --shadow:0 1px 2px rgba(20,22,26,.06),0 12px 32px rgba(20,22,26,.08); --radius:14px;
+  }
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+    --bg:#101216; --surface:#191C21; --surface-2:#20242A; --stage:#0B0C0F;
+    --text:#ECEEF1; --muted:#98A0AC; --border:#2A2E36; --border-strong:#3A3F49;
+    --accent:#2DD4BF; --accent-strong:#5EEAD9; --accent-ink:#052723;
+    --danger:#F0776A; --shadow:0 1px 2px rgba(0,0,0,.4),0 18px 44px rgba(0,0,0,.5);
+  }}
+  :root[data-theme="dark"]{
+    --bg:#101216;--surface:#191C21;--surface-2:#20242A;--stage:#0B0C0F;--text:#ECEEF1;--muted:#98A0AC;
+    --border:#2A2E36;--border-strong:#3A3F49;--accent:#2DD4BF;--accent-strong:#5EEAD9;--accent-ink:#052723;
+    --danger:#F0776A;--shadow:0 1px 2px rgba(0,0,0,.4),0 18px 44px rgba(0,0,0,.5);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:"Hanken Grotesk",system-ui,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .app{min-height:100vh;display:flex;flex-direction:column}
+  header{display:flex;align-items:center;gap:14px;padding:16px 22px;border-bottom:1px solid var(--border);background:var(--surface)}
+  .brand{display:flex;align-items:center;gap:12px}
+  .mark{width:34px;height:34px;flex:none;color:var(--accent)}
+  .brand h1{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:20px;letter-spacing:-.02em;margin:0;line-height:1}
+  .brand p{margin:2px 0 0;color:var(--muted);font-size:12.5px}
+  .header-spacer{flex:1}
+  .nav{display:flex;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:3px}
+  .nav a{padding:7px 13px;border-radius:8px;font-size:13px;font-weight:600;color:var(--muted);text-decoration:none}
+  .nav a.on{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+  .theme-btn{border:1px solid var(--border);background:var(--surface-2);color:var(--muted);width:38px;height:38px;border-radius:10px;cursor:pointer;display:grid;place-items:center}
+  .theme-btn:hover{color:var(--text)}
+  main{flex:1;display:grid;grid-template-columns:1fr 360px;min-height:0}
+  @media (max-width:920px){main{grid-template-columns:1fr}}
+  .stage{position:relative;display:flex;align-items:center;justify-content:center;padding:26px;overflow:auto;
+    background:radial-gradient(120% 120% at 50% 0%, color-mix(in srgb,var(--stage) 88%, var(--accent) 4%), var(--stage))}
+  .drop{width:min(600px,100%);border:1.5px dashed var(--border-strong);border-radius:var(--radius);background:var(--surface);padding:46px 30px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+  .drop:hover,.drop.hot{border-color:var(--accent);background:color-mix(in srgb,var(--surface) 92%,var(--accent) 8%)}
+  .drop .ico{width:52px;height:52px;color:var(--accent);margin:0 auto 14px}
+  .drop h2{font-family:"Bricolage Grotesque",sans-serif;font-size:19px;margin:0 0 6px}
+  .drop p{margin:0;color:var(--muted);font-size:13.5px}
+  .drop .hint{margin-top:16px;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);opacity:.8}
+  .viewer{width:100%;max-width:900px;display:flex;flex-direction:column;gap:10px}
+  video{width:100%;max-height:calc(100vh - 230px);background:#000;border-radius:8px;box-shadow:var(--shadow)}
+  .vlabel{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:center}
+  .busy{position:absolute;inset:0;display:none;place-items:center;background:color-mix(in srgb,var(--stage) 55%,transparent);backdrop-filter:blur(2px);z-index:5}
+  .busy.on{display:grid}
+  .busy .card{min-width:280px;background:var(--surface);border:1px solid var(--border);padding:18px 20px;border-radius:14px;box-shadow:var(--shadow)}
+  .busy .card h3{margin:0 0 4px;font-family:"Bricolage Grotesque",sans-serif;font-size:16px;display:flex;align-items:center;gap:10px}
+  .busy .card .sub{color:var(--muted);font-size:12.5px;font-family:"JetBrains Mono",monospace}
+  .spin{width:16px;height:16px;border:2.5px solid var(--border-strong);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .console{border-left:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;min-height:0;overflow-y:auto}
+  @media (max-width:920px){.console{border-left:0;border-top:1px solid var(--border)}}
+  .group{padding:18px 20px;border-bottom:1px solid var(--border)}
+  .group:last-of-type{border-bottom:0}
+  .glabel{display:flex;align-items:center;gap:8px;font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+  .glabel .n{color:var(--accent);font-weight:600}
+  .meta{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+  .meta b{color:var(--text);font-weight:500}
+  .meta .fn{word-break:break-all}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-family:inherit;font-size:14px;font-weight:600;padding:11px 14px;border-radius:11px;cursor:pointer;transition:transform .12s,border-color .15s,background .15s}
+  .btn:hover{border-color:var(--border-strong)}
+  .btn:active{transform:translateY(1px)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn svg{width:17px;height:17px;flex:none}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);box-shadow:0 6px 16px color-mix(in srgb,var(--accent) 40%,transparent)}
+  .btn.primary:hover{background:var(--accent-strong);border-color:var(--accent-strong)}
+  .btn.ghost{background:transparent}
+  .field{margin-top:14px}
+  .field .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+  .field label{font-size:13px;font-weight:600}
+  .field .val{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--accent)}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:99px;background:var(--border-strong);outline:none;margin:0}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid var(--surface)}
+  input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid var(--surface)}
+  .tip{font-size:12px;color:var(--muted);margin:10px 0 0;line-height:1.45}
+  .bar{height:8px;border-radius:99px;background:var(--border-strong);overflow:hidden;margin-top:12px}
+  .bar > i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent-strong));transition:width .2s}
+  .rstate{display:flex;align-items:flex-start;gap:10px;padding:12px 13px;border-radius:11px;margin-bottom:12px;font-size:13px;line-height:1.4;border:1px solid var(--border);background:var(--surface-2);color:var(--muted)}
+  .rstate svg{width:18px;height:18px;flex:none;margin-top:1px}
+  .rstate.ok{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));background:color-mix(in srgb,var(--surface) 82%,var(--accent) 18%);color:var(--text)}
+  .rstate.ok svg{color:var(--accent)}
+  .rstate.warn{border-color:color-mix(in srgb,var(--danger) 40%,var(--border));background:color-mix(in srgb,var(--surface) 86%,var(--danger) 14%);color:var(--text)}
+  .rstate.warn svg{color:var(--danger)}
+  .rstate b{color:var(--text);font-weight:600}
+  .status{padding:12px 20px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--border);background:var(--surface-2);min-height:44px;display:flex;align-items:center;gap:8px}
+  .status .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
+  footer{padding:12px 22px;border-top:1px solid var(--border);background:var(--surface);font-size:11.5px;color:var(--muted);line-height:1.5}
+  footer b{color:var(--text);font-weight:600}
+  .hidden{display:none!important}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 2c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7Z" fill="currentColor"/>
+        <path d="M4 20 20 4" stroke="var(--danger)" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <h1>Sparkle Eraser</h1>
+        <p>Remove the Gemini logo from every frame of a video</p>
+      </div>
+    </div>
+    <div class="header-spacer"></div>
+    <nav class="nav"><a href="index.html">Image</a><a href="video.html" class="on">Video</a></nav>
+    <button class="theme-btn" id="theme" title="Toggle theme" aria-label="Toggle theme">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <section class="stage" id="stage">
+      <div class="drop" id="drop" role="button" tabindex="0" aria-label="Upload a video">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m10 9 5 3-5 3z"/></svg>
+        <h2>Drop an MP4 here</h2>
+        <p>or click to browse — every frame is cleaned, audio is kept</p>
+        <div class="hint">100% local · nothing is uploaded · Chrome / Edge required</div>
+      </div>
+
+      <div class="viewer hidden" id="viewer">
+        <video id="result" controls playsinline></video>
+        <div class="vlabel" id="vlabel">Preview</div>
+      </div>
+
+      <div class="busy" id="busy">
+        <div class="card">
+          <h3><span class="spin"></span> <span id="busyTitle">Processing…</span></h3>
+          <div class="sub" id="busySub">Starting…</div>
+          <div class="bar"><i id="busyBar"></i></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="console">
+      <div class="group">
+        <p class="glabel"><span class="n">01</span> Video</p>
+        <div class="meta">
+          <span class="fn" id="mName">No video loaded</span>
+          <span id="mDims">—</span>
+        </div>
+        <button class="btn ghost" id="loadNew" style="margin-top:12px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Load another video
+        </button>
+      </div>
+
+      <div class="group">
+        <p class="glabel"><span class="n">02</span> Settings</p>
+        <div class="field" style="margin-top:0">
+          <div class="top"><label for="sens">Sensitivity</label><span class="val" id="sensV">0.55</span></div>
+          <input type="range" id="sens" min="0" max="1" step="0.01" value="0.55">
+        </div>
+        <div class="field">
+          <div class="top"><label for="halo">Edge padding</label><span class="val" id="haloV">3 px</span></div>
+          <input type="range" id="halo" min="0" max="12" step="1" value="3">
+        </div>
+        <div class="field">
+          <div class="top"><label for="interval">Re-detect every</label><span class="val" id="intervalV">15 frames</span></div>
+          <input type="range" id="interval" min="1" max="60" step="1" value="15">
+        </div>
+        <p class="tip">The watermark position is usually fixed, so detecting periodically (and reusing the mask between) is much faster. Lower it if the logo moves.</p>
+      </div>
+
+      <div class="group">
+        <p class="glabel"><span class="n">03</span> Result</p>
+        <div class="rstate" id="rstate">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.5 3.5 2.5 5.5 6 6-3.5.5-5.5 2.5-6 6-.5-3.5-2.5-5.5-6-6 3.5-.5 5.5-2.5 6-6Z"/></svg>
+          <span id="rstateText">Load a video, then Process to clean every frame.</span>
+        </div>
+        <button class="btn primary" id="process" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.5 3.5 2.5 5.5 6 6-3.5.5-5.5 2.5-6 6-.5-3.5-2.5-5.5-6-6 3.5-.5 5.5-2.5 6-6Z"/></svg>
+          Remove logo from video
+        </button>
+        <button class="btn" id="download" style="margin-top:8px" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+          Download MP4
+        </button>
+      </div>
+
+      <div class="status"><span class="dot"></span><span id="status">Checking browser support…</span></div>
+    </aside>
+  </main>
+
+  <footer>
+    <b>Private &amp; local:</b> your video is decoded, cleaned, and re-encoded entirely in your browser — nothing is uploaded. Audio is copied through untouched. Removes the <b>visible</b> sparkle only; invisible provenance marks (e.g. SynthID) are unaffected. Please use it on videos you're permitted to edit.
+  </footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const status = t => $("status").textContent = t;
+  const setState = (kind, html) => { $("rstate").className = "rstate" + (kind ? " " + kind : ""); $("rstateText").innerHTML = html; };
+
+  /* Theme */
+  $("theme").addEventListener("click", () => {
+    const cur = document.documentElement.getAttribute("data-theme");
+    const dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme:dark)").matches;
+    document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+  });
+
+  /* Capability check */
+  const supported = ("VideoEncoder" in window) && ("VideoDecoder" in window) && ("VideoFrame" in window) && (typeof MP4Box !== "undefined") && (typeof Mp4Muxer !== "undefined");
+  if(!supported){
+    setState("warn", "<b>This browser can't run the video pipeline.</b> It needs WebCodecs — use <b>Chrome</b> or <b>Edge</b> (desktop).");
+    status("Unsupported browser — WebCodecs not available.");
+  } else {
+    status("Ready. Load a video to begin.");
+  }
+
+  /* ---------------- Detection + inpainting (same engine as the image tool) ---------------- */
+  const TG = 32;
+  let TEMPLATES = null;
+  function buildTemplates(){
+    const out = [];
+    for(const rot of [0, Math.PI/4]){
+      const cv = document.createElement("canvas"); cv.width = cv.height = TG;
+      const c = cv.getContext("2d"); c.clearRect(0,0,TG,TG);
+      c.translate(TG/2, TG/2); c.rotate(rot);
+      const R = TG*0.46;
+      c.beginPath(); c.moveTo(0,-R);
+      c.quadraticCurveTo(0,0, R,0); c.quadraticCurveTo(0,0, 0,R);
+      c.quadraticCurveTo(0,0, -R,0); c.quadraticCurveTo(0,0, 0,-R);
+      c.closePath(); c.fillStyle="#fff"; c.fill();
+      const d = c.getImageData(0,0,TG,TG).data, grid = new Uint8Array(TG*TG); let area=0;
+      for(let i=0;i<TG*TG;i++) if(d[i*4+3]>40){ grid[i]=1; area++; }
+      out.push({grid, area});
+    }
+    return out;
+  }
+  function shapeMatch(comp, rw, minx, miny, bw, bh){
+    const grid = new Uint8Array(TG*TG); let carea=0;
+    for(const p of comp){
+      const px = (p % rw) - minx, py = ((p/rw)|0) - miny;
+      const gx = Math.min(TG-1, (px/bw*TG)|0), gy = Math.min(TG-1, (py/bh*TG)|0);
+      const gi = gy*TG+gx; if(!grid[gi]){ grid[gi]=1; carea++; }
+    }
+    let best=0;
+    for(const t of TEMPLATES){
+      let inter=0; for(let i=0;i<TG*TG;i++) if(grid[i] && t.grid[i]) inter++;
+      const uni = carea + t.area - inter; if(uni>0) best = Math.max(best, inter/uni);
+    }
+    return best;
+  }
+  function medianBG(src,W,x0,y0,x1,y1){
+    const hr=new Uint32Array(256), hg=new Uint32Array(256), hb=new Uint32Array(256); let n=0;
+    for(let y=y0;y<y1;y+=2) for(let x=x0;x<x1;x+=2){ const i=(y*W+x)*4; hr[src[i]]++; hg[src[i+1]]++; hb[src[i+2]]++; n++; }
+    const med=h=>{ let c=0; const half=n>>1; for(let v=0;v<256;v++){ c+=h[v]; if(c>=half) return v; } return 128; };
+    return [med(hr),med(hg),med(hb)];
+  }
+  const _buf = {rw:0,rh:0,bin:null,tmp:null,lab:null};
+  function scanRegion(src,W,H,x0,y0,x1,y1,opt){
+    const rw=x1-x0, rh=y1-y0;
+    if(rw<10||rh<10) return null;
+    if(_buf.rw!==rw || _buf.rh!==rh || _buf.bin.length<rw*rh){
+      _buf.rw=rw; _buf.rh=rh; _buf.bin=new Uint8Array(rw*rh); _buf.tmp=new Uint8Array(rw*rh); _buf.lab=new Uint8Array(rw*rh);
+    }
+    const bin=_buf.bin, tmp=_buf.tmp, lab=_buf.lab;
+    const [br,bg,bb]=medianBG(src,W,x0,y0,x1,y1);
+    const limit=rw*rh*0.5, stack=[]; let best=null;
+    for(const thr of opt.thrList){
+      const t2=thr*thr;
+      for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+        const i=((y+y0)*W+(x+x0))*4;
+        const dr=src[i]-br, dg=src[i+1]-bg, db=src[i+2]-bb;
+        bin[y*rw+x] = (dr*dr+dg*dg+db*db > t2) ? 1 : 0;
+      }
+      for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+        const i=y*rw+x; let v=bin[i];
+        if(!v && ((x>0&&bin[i-1])||(x<rw-1&&bin[i+1])||(y>0&&bin[i-rw])||(y<rh-1&&bin[i+rw]))) v=1;
+        tmp[i]=v;
+      }
+      lab.fill(0);
+      for(let sy=0;sy<rh;sy++) for(let sx=0;sx<rw;sx++){
+        const si=sy*rw+sx; if(!tmp[si]||lab[si]) continue;
+        let minx=sx,maxx=sx,miny=sy,maxy=sy,area=0,sumx=0,sumy=0,over=false;
+        const comp=[]; stack.length=0; stack.push(si); lab[si]=1;
+        while(stack.length){
+          const p=stack.pop(); comp.push(p);
+          const px=p%rw, py=(p/rw)|0; area++; sumx+=px; sumy+=py;
+          if(px<minx)minx=px; if(px>maxx)maxx=px; if(py<miny)miny=py; if(py>maxy)maxy=py;
+          for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+            if(!dx&&!dy) continue; const nx=px+dx, ny=py+dy;
+            if(nx<0||ny<0||nx>=rw||ny>=rh) continue; const ni=ny*rw+nx;
+            if(tmp[ni]&&!lab[ni]){ lab[ni]=1; stack.push(ni); }
+          }
+          if(area>limit){ over=true; break; }
+        }
+        if(over || area<24) continue;
+        const bw=maxx-minx+1, bh=maxy-miny+1;
+        const squ=Math.min(bw,bh)/Math.max(bw,bh);
+        const sizeFrac=Math.max(bw,bh)/opt.sizeRef;
+        if(sizeFrac<opt.minSize || sizeFrac>opt.maxSize) continue;
+        if(squ<0.5) continue;
+        const iou = shapeMatch(comp, rw, minx, miny, bw, bh);
+        if(iou < opt.minIoU) continue;
+        let score = iou*2.4 + squ*0.4;
+        if(opt.bottomRef!==undefined){ const gcy=y0+sumy/area; score += (gcy/opt.bottomRef)*0.5; }
+        if(opt.corner){ const gcx=x0+sumx/area, gcy=y0+sumy/area; const cd=Math.hypot(gcx-opt.corner.cx, gcy-opt.corner.cy)/opt.sizeRef; score += (1-Math.min(1,cd))*0.6; }
+        if(!best || score>best.score) best={score,iou,comp,x0,y0,rw};
+      }
+    }
+    return best;
+  }
+  function detectMask(src,W,H,sens){
+    if(!TEMPLATES) TEMPLATES = buildTemplates();
+    const minD = Math.min(W,H);
+    const minIoU = 0.28 + (1-sens)*0.22;
+    const thrList = [20,32,48,70,100];
+    let best=null;
+    const band = Math.max(48, Math.round(minD*0.26));
+    best = scanRegion(src,W,H, 0, Math.max(0,H-band), W, H, {thrList, sizeRef:band, minSize:0.12, maxSize:1.3, minIoU, bottomRef:H});
+    if(!best){
+      const s=Math.max(28,Math.round(minD*0.28));
+      const corners=[{cx:0,cy:0,x0:0,y0:0},{cx:W-1,cy:0,x0:W-s,y0:0},{cx:0,cy:H-1,x0:0,y0:H-s},{cx:W-1,cy:H-1,x0:W-s,y0:H-s}];
+      for(const c of corners){
+        const x0=Math.max(0,c.x0), y0=Math.max(0,c.y0);
+        const r=scanRegion(src,W,H,x0,y0,Math.min(W,x0+s),Math.min(H,y0+s),{thrList, sizeRef:s, minSize:0.06, maxSize:0.99, minIoU:minIoU+0.06, corner:c});
+        if(r && (!best || r.score>best.score)) best=r;
+      }
+    }
+    if(!best) best = scanRegion(src,W,H,0,0,W,H, {thrList, sizeRef:minD, minSize:0.03, maxSize:0.85, minIoU:0.5});
+    if(!best) return null;
+    const mask=new Uint8Array(W*H);
+    for(const p of best.comp){ const px=p%best.rw, py=(p/best.rw)|0; mask[(best.y0+py)*W + (best.x0+px)]=1; }
+    return mask;
+  }
+  function dilate(m,W,H,r){
+    if(r<=0) return m.slice();
+    let a=m.slice(), b=new Uint8Array(W*H);
+    for(let k=0;k<r;k++){
+      for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+        const i=y*W+x;
+        if(a[i]){ b[i]=1; continue; }
+        let v=0;
+        if(x>0&&a[i-1])v=1; else if(x<W-1&&a[i+1])v=1;
+        else if(y>0&&a[i-W])v=1; else if(y<H-1&&a[i+W])v=1;
+        else if(x>0&&y>0&&a[i-W-1])v=1; else if(x<W-1&&y>0&&a[i-W+1])v=1;
+        else if(x>0&&y<H-1&&a[i+W-1])v=1; else if(x<W-1&&y<H-1&&a[i+W+1])v=1;
+        b[i]=v;
+      }
+      const t=a; a=b; b=t;
+    }
+    return a;
+  }
+  function pullPush(W,H,col,wt){
+    const levels=[{W,H,col,wt}]; let cW=W,cH=H,cCol=col,cWt=wt;
+    while(cW>1 || cH>1){
+      const nW=Math.max(1,Math.ceil(cW/2)), nH=Math.max(1,Math.ceil(cH/2));
+      const nCol=new Float32Array(nW*nH*3), nWt=new Float32Array(nW*nH);
+      for(let y=0;y<nH;y++) for(let x=0;x<nW;x++){
+        let sw=0,r=0,g=0,b=0;
+        for(let dy=0;dy<2;dy++) for(let dx=0;dx<2;dx++){
+          const sx=x*2+dx, sy=y*2+dy;
+          if(sx<cW&&sy<cH){ const si=sy*cW+sx, w=cWt[si]; sw+=w; r+=cCol[si*3]*w; g+=cCol[si*3+1]*w; b+=cCol[si*3+2]*w; }
+        }
+        const di=y*nW+x;
+        if(sw>0){ nCol[di*3]=r/sw; nCol[di*3+1]=g/sw; nCol[di*3+2]=b/sw; }
+        nWt[di]= sw>=1 ? 1 : sw;
+      }
+      levels.push({W:nW,H:nH,col:nCol,wt:nWt}); cW=nW; cH=nH; cCol=nCol; cWt=nWt;
+    }
+    for(let l=levels.length-2;l>=0;l--){
+      const fine=levels[l], coarse=levels[l+1];
+      for(let y=0;y<fine.H;y++) for(let x=0;x<fine.W;x++){
+        const i=y*fine.W+x, w=fine.wt[i];
+        if(w<1){
+          const cx=Math.min(coarse.W-1,x>>1), cy=Math.min(coarse.H-1,y>>1), ci=cy*coarse.W+cx, iw=1-w;
+          fine.col[i*3]  = fine.col[i*3]*w   + coarse.col[ci*3]*iw;
+          fine.col[i*3+1]= fine.col[i*3+1]*w + coarse.col[ci*3+1]*iw;
+          fine.col[i*3+2]= fine.col[i*3+2]*w + coarse.col[ci*3+2]*iw;
+          fine.wt[i]=1;
+        }
+      }
+    }
+  }
+  function inpaintMask(src,W,H,mask,halo){
+    const N=W*H;
+    const mm = dilate(mask, W, H, halo);
+    let minx=W,miny=H,maxx=-1,maxy=-1;
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){ if(mm[y*W+x]){ if(x<minx)minx=x;if(x>maxx)maxx=x;if(y<miny)miny=y;if(y>maxy)maxy=y; } }
+    if(maxx<0) return;
+    const col=new Float32Array(N*3), wt=new Float32Array(N);
+    for(let i=0;i<N;i++){
+      if(mm[i]) wt[i]=0;
+      else { wt[i]=1; col[i*3]=src[i*4]; col[i*3+1]=src[i*4+1]; col[i*3+2]=src[i*4+2]; }
+    }
+    pullPush(W,H,col,wt);
+    const pad=2;
+    const bx0=Math.max(0,minx-pad), by0=Math.max(0,miny-pad), bx1=Math.min(W-1,maxx+pad), by1=Math.min(H-1,maxy+pad);
+    let buf=new Float32Array(col), tmp=new Float32Array(col);
+    const ITERS=30;
+    for(let it=0; it<ITERS; it++){
+      for(let y=by0;y<=by1;y++) for(let x=bx0;x<=bx1;x++){
+        const i=y*W+x; if(!mm[i]) continue;
+        let r=0,g=0,b=0,c=0;
+        if(x>0){const j=(i-1)*3;r+=buf[j];g+=buf[j+1];b+=buf[j+2];c++;}
+        if(x<W-1){const j=(i+1)*3;r+=buf[j];g+=buf[j+1];b+=buf[j+2];c++;}
+        if(y>0){const j=(i-W)*3;r+=buf[j];g+=buf[j+1];b+=buf[j+2];c++;}
+        if(y<H-1){const j=(i+W)*3;r+=buf[j];g+=buf[j+1];b+=buf[j+2];c++;}
+        const o=i*3; tmp[o]=r/c; tmp[o+1]=g/c; tmp[o+2]=b/c;
+      }
+      for(let y=by0;y<=by1;y++) for(let x=bx0;x<=bx1;x++){
+        const i=y*W+x; if(mm[i]){ const o=i*3; buf[o]=tmp[o]; buf[o+1]=tmp[o+1]; buf[o+2]=tmp[o+2]; }
+      }
+    }
+    for(let i=0;i<N;i++) if(mm[i]){ src[i*4]=buf[i*3]; src[i*4+1]=buf[i*3+1]; src[i*4+2]=buf[i*3+2]; src[i*4+3]=255; }
+  }
+
+  /* ---------------- Demux (mp4box) ---------------- */
+  function demux(file){
+    return new Promise((resolve, reject) => {
+      const mp4 = MP4Box.createFile();
+      const vSamples = [], aSamples = [];
+      let info = null;
+      mp4.onError = e => reject(new Error("Demux failed: " + e));
+      mp4.onReady = i => {
+        info = i;
+        const v = i.videoTracks[0], a = i.audioTracks[0];
+        if(v) mp4.setExtractionOptions(v.id, "v", { nbSamples: 1e9 });
+        if(a) mp4.setExtractionOptions(a.id, "a", { nbSamples: 1e9 });
+        mp4.start();
+      };
+      mp4.onSamples = (id, user, samples) => { (user === "v" ? vSamples : aSamples).push(...samples); };
+      file.arrayBuffer().then(ab => {
+        const buf = ab; buf.fileStart = 0;
+        mp4.appendBuffer(buf); mp4.flush();
+        if(!info) return reject(new Error("Not a readable MP4 (no moov found)."));
+        resolve({ mp4, info, vTrack: info.videoTracks[0], aTrack: info.audioTracks[0], vSamples, aSamples });
+      }).catch(reject);
+    });
+  }
+  // Extract codec extradata (avcC) as description bytes for the decoder
+  function videoDescription(mp4, trackId){
+    const trak = mp4.getTrackById(trackId);
+    for(const entry of trak.mdia.minf.stbl.stsd.entries){
+      const box = entry.avcC || entry.hvcC || entry.vpcC || entry.av1C;
+      if(box){ const s = new DataStream(undefined, 0, DataStream.BIG_ENDIAN); box.write(s); return new Uint8Array(s.buffer, 8); }
+    }
+    return undefined;
+  }
+  // Extract AAC AudioSpecificConfig from the esds box (for the muxer's audio description)
+  function audioDescription(mp4, trackId){
+    try{
+      const trak = mp4.getTrackById(trackId);
+      const esds = trak.mdia.minf.stbl.stsd.entries[0].esds;
+      const stack = [...(esds.esd.descs || [])];
+      while(stack.length){ const d = stack.shift(); if(d.data) return new Uint8Array(d.data); if(d.descs) stack.push(...d.descs); }
+    }catch(_){}
+    return undefined;
+  }
+
+  /* ---------------- State ---------------- */
+  const S = { file:null, demuxed:null, W:0, H:0, fps:30, dur:0, nb:0, hasAudio:false, blob:null, blobUrl:null };
+  const cvs = document.createElement("canvas");
+  const cctx = cvs.getContext("2d", { willReadFrequently:true });
+
+  /* ---------------- Load ---------------- */
+  const drop = $("drop"), viewer = $("viewer");
+  const filePick = () => { const inp = document.createElement("input"); inp.type="file"; inp.accept="video/mp4,video/*"; inp.onchange = e => { if(e.target.files[0]) loadFile(e.target.files[0]); }; inp.click(); };
+  drop.addEventListener("click", filePick);
+  drop.addEventListener("keydown", e => { if(e.key==="Enter"||e.key===" "){ e.preventDefault(); filePick(); } });
+  $("loadNew").addEventListener("click", filePick);
+  ["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("hot"); }));
+  ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("hot"); }));
+  drop.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if(f) loadFile(f); });
+  window.addEventListener("dragover", e => e.preventDefault());
+  window.addEventListener("drop", e => e.preventDefault());
+
+  async function loadFile(file){
+    if(!supported) return;
+    S.file = file;
+    status("Reading video…");
+    try{
+      const d = await demux(file);
+      if(!d.vTrack) throw new Error("No video track found in this file.");
+      S.demuxed = d;
+      S.W = d.vTrack.video.width; S.H = d.vTrack.video.height;
+      S.nb = d.vTrack.nb_samples;
+      S.dur = d.info.duration / d.info.timescale;
+      S.fps = S.dur > 0 ? (S.nb / S.dur) : 30;
+      S.hasAudio = !!d.aTrack;
+      $("mName").textContent = file.name;
+      $("mDims").innerHTML = `<b>${S.W}</b> × <b>${S.H}</b> · <b>${S.fps.toFixed(2)}</b> fps · <b>${S.dur.toFixed(1)}</b>s · ${S.nb} frames${S.hasAudio?" · audio":" · no audio"}`;
+      setState("", `Ready to process <b>${S.nb}</b> frames at full resolution.${S.hasAudio?" Audio will be kept.":""}`);
+      $("process").disabled = false; $("download").disabled = true;
+      viewer.classList.add("hidden");
+      status("Loaded. Click “Remove logo from video”.");
+    }catch(err){
+      console.error(err);
+      setState("warn", "<b>Couldn't read this file.</b> " + (err.message||"") + " Try a standard <b>.mp4</b> (H.264).");
+      status("Load failed.");
+    }
+  }
+
+  /* ---------------- Sliders ---------------- */
+  const bind = (el,val,fmt)=>{ const up=()=>val.textContent=fmt(el.value); el.addEventListener("input",up); up(); };
+  bind($("sens"),$("sensV"),v=>Number(v).toFixed(2));
+  bind($("halo"),$("haloV"),v=>v+" px");
+  bind($("interval"),$("intervalV"),v=>v+" frame"+(v==1?"":"s"));
+
+  /* ---------------- Process ---------------- */
+  const busy = on => $("busy").classList.toggle("on", on);
+  $("process").addEventListener("click", process);
+
+  async function process(){
+    if(!S.demuxed) return;
+    $("process").disabled = true; $("download").disabled = true;
+    if(S.blobUrl){ URL.revokeObjectURL(S.blobUrl); S.blobUrl=null; }
+    busy(true); $("busyTitle").textContent = "Cleaning frames…"; $("busySub").textContent = "Preparing…"; $("busyBar").style.width = "0%";
+    const t0 = performance.now();
+    try{
+      const blob = await transcode({
+        sens: +$("sens").value,
+        halo: +$("halo").value,
+        interval: +$("interval").value,
+        onProgress: (done,total) => {
+          const pct = total ? Math.round(done/total*100) : 0;
+          $("busyBar").style.width = pct + "%";
+          const el = (performance.now()-t0)/1000;
+          const eta = done ? (el/done)*(total-done) : 0;
+          $("busySub").textContent = `${done} / ${total} frames · ${pct}% · ~${eta.toFixed(0)}s left`;
+        }
+      });
+      S.blob = blob;
+      S.blobUrl = URL.createObjectURL(blob);
+      $("result").src = S.blobUrl;
+      $("vlabel").textContent = `Cleaned · ${(blob.size/1048576).toFixed(1)} MB`;
+      viewer.classList.remove("hidden");
+      setState("ok", `<b>Done.</b> ${S.nb} frames cleaned${S.hasAudio?", audio kept":""}. Preview it, then Download.`);
+      $("download").disabled = false;
+      status(`Finished in ${((performance.now()-t0)/1000).toFixed(1)}s.`);
+    }catch(err){
+      console.error(err);
+      setState("warn", "<b>Processing failed.</b> " + (err.message||"Unknown error") + " (see the browser console for details).");
+      status("Processing failed — check the console.");
+    }finally{
+      busy(false); $("process").disabled = false;
+    }
+  }
+
+  async function transcode(opts){
+    const { mp4, vTrack, aTrack, vSamples, aSamples } = S.demuxed;
+    const W = S.W, H = S.H, fps = S.fps;
+    cvs.width = W; cvs.height = H;
+
+    const muxer = new Mp4Muxer.Muxer({
+      target: new Mp4Muxer.ArrayBufferTarget(),
+      video: { codec: "avc", width: W, height: H },
+      audio: aTrack ? { codec: "aac", numberOfChannels: aTrack.audio.channel_count, sampleRate: aTrack.audio.sample_rate } : undefined,
+      fastStart: "in-memory",
+      firstTimestampBehavior: "offset"
+    });
+
+    // Pick a supported H.264 encoder config (profile/level) for this resolution
+    const bitrate = Math.min(24e6, Math.max(2e6, Math.round(W*H*fps*0.12)));
+    let encCfg = null;
+    for(const codec of ["avc1.640033","avc1.4D0033","avc1.42E033","avc1.640028","avc1.4D0028","avc1.42E028","avc1.42E01E"]){
+      const cfg = { codec, width:W, height:H, bitrate, framerate:fps, avc:{ format:"avc" } };
+      try{ const s = await VideoEncoder.isConfigSupported(cfg); if(s.supported){ encCfg = cfg; break; } }catch(_){}
+    }
+    if(!encCfg) throw new Error("No supported H.264 encoder configuration on this device.");
+
+    let fatal = null;
+    const encoder = new VideoEncoder({
+      output: (chunk, meta) => { try{ muxer.addVideoChunk(chunk, meta); }catch(e){ fatal = e; } },
+      error: e => { fatal = e; }
+    });
+    encoder.configure(encCfg);
+    const gop = Math.max(1, Math.round(fps*2));
+
+    const decoder = new VideoDecoder({ output: f => ready.push(f), error: e => { fatal = e; } });
+    decoder.configure({ codec: vTrack.codec, description: videoDescription(mp4, vTrack.id), codedWidth: W, codedHeight: H, hardwareAcceleration: "no-preference" });
+
+    const ready = [];
+    let lastMask = null, encCount = 0, processed = 0;
+
+    async function drainOne(){
+      const frame = ready.shift();
+      if(!frame) { await sleep(0); return; }
+      cctx.drawImage(frame, 0, 0, W, H);
+      const t = frame.timestamp, dur = frame.duration || Math.round(1e6/fps);
+      frame.close();
+      const img = cctx.getImageData(0, 0, W, H);
+      if(processed % opts.interval === 0){
+        const m = detectMask(img.data, W, H, opts.sens);
+        if(m) lastMask = m;
+      }
+      if(lastMask){ inpaintMask(img.data, W, H, lastMask, opts.halo); cctx.putImageData(img, 0, 0); }
+      const out = new VideoFrame(cvs, { timestamp: t, duration: dur });
+      while(encoder.encodeQueueSize > 6){ if(fatal) break; await sleep(0); }
+      encoder.encode(out, { keyFrame: (encCount % gop) === 0 });
+      out.close(); encCount++; processed++;
+      opts.onProgress(processed, S.nb);
+    }
+
+    for(let i=0;i<vSamples.length;i++){
+      if(fatal) throw fatal;
+      const s = vSamples[i];
+      decoder.decode(new EncodedVideoChunk({
+        type: s.is_sync ? "key" : "delta",
+        timestamp: Math.round(s.cts * 1e6 / s.timescale),
+        duration: Math.round(s.duration * 1e6 / s.timescale),
+        data: s.data
+      }));
+      while(decoder.decodeQueueSize > 8 || ready.length > 8){ if(fatal) throw fatal; await drainOne(); }
+    }
+    await decoder.flush();
+    while(ready.length){ if(fatal) throw fatal; await drainOne(); }
+    await encoder.flush();
+    if(fatal) throw fatal;
+
+    // Copy the original audio through, unchanged
+    if(aTrack){
+      const adesc = audioDescription(mp4, aTrack.id);
+      for(let i=0;i<aSamples.length;i++){
+        const s = aSamples[i];
+        const chunk = new EncodedAudioChunk({
+          type: s.is_sync ? "key" : "delta",
+          timestamp: Math.round(s.cts * 1e6 / s.timescale),
+          duration: Math.round(s.duration * 1e6 / s.timescale),
+          data: s.data
+        });
+        muxer.addAudioChunk(chunk, i===0 ? { decoderConfig: { codec:"mp4a.40.2", sampleRate: aTrack.audio.sample_rate, numberOfChannels: aTrack.audio.channel_count, description: adesc } } : undefined);
+      }
+    }
+
+    muxer.finalize();
+    return new Blob([muxer.target.buffer], { type: "video/mp4" });
+  }
+
+  /* ---------------- Download ---------------- */
+  $("download").addEventListener("click", () => {
+    if(!S.blob) return;
+    const a = document.createElement("a");
+    a.href = S.blobUrl || (S.blobUrl = URL.createObjectURL(S.blob));
+    a.download = (S.file.name.replace(/\.[^.]+$/, "") || "video") + "-clean.mp4";
+    document.body.appendChild(a); a.click(); a.remove();
+    status("Downloaded.");
+  });
+})();
+</script>
+</body>
+</html>
