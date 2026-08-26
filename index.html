@@ -1,0 +1,852 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sparkle Eraser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+
+<style>
+  /* ---------- Tokens: darkroom console ---------- */
+  :root{
+    --bg:#F4F3EF;          /* warm paper */
+    --surface:#FFFFFF;
+    --surface-2:#FAF9F5;
+    --stage:#E9E7E0;       /* workspace behind image */
+    --text:#17181C;
+    --muted:#63666F;
+    --border:#E4E0D8;
+    --border-strong:#D3CEC3;
+    --accent:#0FB1A0;      /* teal — actions */
+    --accent-strong:#0A8B7D;
+    --accent-ink:#04231F;  /* text on accent */
+    --mask-r:255; --mask-g:45; --mask-b:120;   /* magenta selection */
+    --danger:#D2493B;
+    --shadow:0 1px 2px rgba(20,22,26,.06),0 12px 32px rgba(20,22,26,.08);
+    --radius:14px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#101216;
+      --surface:#191C21;
+      --surface-2:#20242A;
+      --stage:#0B0C0F;
+      --text:#ECEEF1;
+      --muted:#98A0AC;
+      --border:#2A2E36;
+      --border-strong:#3A3F49;
+      --accent:#2DD4BF;
+      --accent-strong:#5EEAD9;
+      --accent-ink:#052723;
+      --danger:#F0776A;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 18px 44px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#101216;--surface:#191C21;--surface-2:#20242A;--stage:#0B0C0F;
+    --text:#ECEEF1;--muted:#98A0AC;--border:#2A2E36;--border-strong:#3A3F49;
+    --accent:#2DD4BF;--accent-strong:#5EEAD9;--accent-ink:#052723;--danger:#F0776A;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 18px 44px rgba(0,0,0,.5);
+  }
+
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--text);
+    font-family:"Hanken Grotesk",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  }
+  .app{min-height:100vh;display:flex;flex-direction:column}
+
+  /* ---------- Header ---------- */
+  header{
+    display:flex;align-items:center;gap:14px;
+    padding:16px 22px;border-bottom:1px solid var(--border);
+    background:var(--surface);
+  }
+  .brand{display:flex;align-items:center;gap:12px}
+  .mark{width:34px;height:34px;flex:none;color:var(--accent);}
+  .brand h1{
+    font-family:"Bricolage Grotesque",sans-serif;font-weight:700;
+    font-size:20px;letter-spacing:-.02em;margin:0;line-height:1;
+  }
+  .brand p{margin:2px 0 0;color:var(--muted);font-size:12.5px}
+  .header-spacer{flex:1}
+  .theme-btn{
+    border:1px solid var(--border);background:var(--surface-2);color:var(--muted);
+    width:38px;height:38px;border-radius:10px;cursor:pointer;display:grid;place-items:center;
+    transition:color .15s,border-color .15s;
+  }
+  .theme-btn:hover{color:var(--text);border-color:var(--border-strong)}
+
+  /* ---------- Layout ---------- */
+  main{flex:1;display:grid;grid-template-columns:1fr 360px;min-height:0}
+  @media (max-width:920px){ main{grid-template-columns:1fr} }
+
+  .stage{
+    position:relative;display:flex;align-items:center;justify-content:center;
+    padding:26px;overflow:auto;background:
+      radial-gradient(120% 120% at 50% 0%, color-mix(in srgb,var(--stage) 88%, var(--accent) 4%), var(--stage));
+  }
+
+  /* ---------- Dropzone ---------- */
+  .drop{
+    width:min(560px,100%);border:1.5px dashed var(--border-strong);border-radius:var(--radius);
+    background:var(--surface);padding:46px 30px;text-align:center;cursor:pointer;
+    transition:border-color .15s, background .15s, transform .15s;
+  }
+  .drop:hover,.drop.hot{border-color:var(--accent);background:color-mix(in srgb,var(--surface) 92%,var(--accent) 8%)}
+  .drop .ico{width:52px;height:52px;color:var(--accent);margin:0 auto 14px}
+  .drop h2{font-family:"Bricolage Grotesque",sans-serif;font-size:19px;margin:0 0 6px;letter-spacing:-.01em}
+  .drop p{margin:0;color:var(--muted);font-size:13.5px}
+  .drop .hint{margin-top:16px;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);opacity:.8}
+
+  /* ---------- Canvas ---------- */
+  .wrap{position:relative;line-height:0;box-shadow:var(--shadow);border-radius:6px;
+    background-image:
+      linear-gradient(45deg,#00000010 25%,transparent 25%),
+      linear-gradient(-45deg,#00000010 25%,transparent 25%),
+      linear-gradient(45deg,transparent 75%,#00000010 75%),
+      linear-gradient(-45deg,transparent 75%,#00000010 75%);
+    background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0;}
+  .wrap.hide{display:none}
+  #view{display:block;max-width:100%;max-height:calc(100vh - 170px);width:auto;height:auto;border-radius:6px}
+  #mask{position:absolute;left:0;top:0;pointer-events:auto;touch-action:none;cursor:crosshair;border-radius:6px}
+
+  .busy{position:absolute;inset:0;display:none;place-items:center;background:color-mix(in srgb,var(--stage) 60%,transparent);
+    backdrop-filter:blur(2px);border-radius:6px;z-index:5}
+  .busy.on{display:grid}
+  .busy .card{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);
+    padding:12px 18px;border-radius:12px;box-shadow:var(--shadow);font-size:13.5px;color:var(--text)}
+  .spin{width:18px;height:18px;border:2.5px solid var(--border-strong);border-top-color:var(--accent);border-radius:50%;
+    animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ---------- Console ---------- */
+  .console{border-left:1px solid var(--border);background:var(--surface);
+    display:flex;flex-direction:column;min-height:0;overflow-y:auto}
+  @media (max-width:920px){ .console{border-left:0;border-top:1px solid var(--border)} }
+  .group{padding:18px 20px;border-bottom:1px solid var(--border)}
+  .group:last-of-type{border-bottom:0}
+  .glabel{display:flex;align-items:center;gap:8px;font-family:"JetBrains Mono",monospace;
+    font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+  .glabel .n{color:var(--accent);font-weight:600}
+
+  .meta{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted);
+    display:flex;flex-direction:column;gap:4px}
+  .meta b{color:var(--text);font-weight:500}
+  .meta .fn{word-break:break-all}
+
+  /* buttons */
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;
+    border:1px solid var(--border);background:var(--surface-2);color:var(--text);
+    font-family:inherit;font-size:14px;font-weight:600;padding:11px 14px;border-radius:11px;
+    cursor:pointer;transition:transform .12s,border-color .15s,background .15s,box-shadow .15s}
+  .btn:hover{border-color:var(--border-strong)}
+  .btn:active{transform:translateY(1px)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn svg{width:17px;height:17px;flex:none}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);box-shadow:0 6px 16px color-mix(in srgb,var(--accent) 40%,transparent)}
+  .btn.primary:hover{background:var(--accent-strong);border-color:var(--accent-strong)}
+  .btn.ghost{background:transparent}
+  .btn.danger{color:var(--danger)}
+  .row{display:flex;gap:8px}
+  .row .btn{width:auto;flex:1}
+
+  /* segmented */
+  .seg{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:3px;gap:3px}
+  .seg button{flex:1;border:0;background:transparent;color:var(--muted);font-family:inherit;font-size:13px;font-weight:600;
+    padding:8px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .12s}
+  .seg button svg{width:15px;height:15px}
+  .seg button[aria-pressed="true"]{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+
+  /* slider */
+  .field{margin-top:14px}
+  .field:first-child{margin-top:0}
+  .field .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+  .field label{font-size:13px;font-weight:600;color:var(--text)}
+  .field .val{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--accent)}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:99px;
+    background:var(--border-strong);outline:none;margin:0}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+    background:var(--accent);cursor:pointer;border:2px solid var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--accent);
+    cursor:pointer;border:2px solid var(--surface)}
+
+  .tip{font-size:12px;color:var(--muted);margin:10px 0 0;line-height:1.45}
+
+  .status{padding:12px 20px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--border);
+    background:var(--surface-2);min-height:44px;display:flex;align-items:center;gap:8px}
+  .status .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
+
+  /* result banner */
+  .rstate{display:flex;align-items:flex-start;gap:10px;padding:12px 13px;border-radius:11px;margin-bottom:12px;
+    font-size:13px;line-height:1.4;border:1px solid var(--border);background:var(--surface-2);color:var(--muted)}
+  .rstate svg{width:18px;height:18px;flex:none;margin-top:1px}
+  .rstate.ok{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));
+    background:color-mix(in srgb,var(--surface) 82%,var(--accent) 18%);color:var(--text)}
+  .rstate.ok svg{color:var(--accent)}
+  .rstate.warn{border-color:color-mix(in srgb,var(--danger) 40%,var(--border));
+    background:color-mix(in srgb,var(--surface) 86%,var(--danger) 14%);color:var(--text)}
+  .rstate.warn svg{color:var(--danger)}
+  .rstate b{color:var(--text);font-weight:600}
+
+  /* fine-tune disclosure */
+  details.tune > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;
+    font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  details.tune > summary::-webkit-details-marker{display:none}
+  details.tune > summary .chev{margin-left:auto;transition:transform .15s}
+  details.tune[open] > summary .chev{transform:rotate(90deg)}
+  details.tune > summary:hover{color:var(--text)}
+  .tune-body{margin-top:14px}
+  .sub{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--muted);margin:18px 0 9px}
+  .sub:first-child{margin-top:0}
+
+  footer{padding:12px 22px;border-top:1px solid var(--border);background:var(--surface);
+    font-size:11.5px;color:var(--muted);line-height:1.5}
+  footer b{color:var(--text);font-weight:600}
+
+  /* export modal */
+  .modal{position:fixed;inset:0;display:none;place-items:center;padding:24px;z-index:50;
+    background:rgba(10,11,14,.55);backdrop-filter:blur(3px)}
+  .modal.on{display:grid}
+  .modal .box{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);
+    max-width:min(720px,100%);max-height:90vh;overflow:auto;padding:20px}
+  .modal h3{font-family:"Bricolage Grotesque",sans-serif;margin:0 0 4px;font-size:18px}
+  .modal p{margin:0 0 14px;color:var(--muted);font-size:13px}
+  .modal img{max-width:100%;border-radius:8px;border:1px solid var(--border);display:block}
+  .modal .acts{display:flex;gap:10px;margin-top:16px}
+
+  .hidden{display:none!important}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 2c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7Z" fill="currentColor"/>
+        <path d="M4 20 20 4" stroke="var(--danger)" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <h1>Sparkle Eraser</h1>
+        <p>Detect &amp; erase the Gemini sparkle logo — all in your browser</p>
+      </div>
+    </div>
+    <div class="header-spacer"></div>
+    <button class="theme-btn" id="theme" title="Toggle light / dark" aria-label="Toggle theme">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <section class="stage" id="stage">
+      <div class="drop" id="drop" role="button" tabindex="0" aria-label="Upload an image">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15l-5-5L5 21"/><path d="M3 16V5a2 2 0 0 1 2-2h11"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M17 3v6M20 6h-6" stroke-width="1.6"/></svg>
+        <h2>Drop an image here</h2>
+        <p>or click to browse — the logo is detected &amp; removed automatically</p>
+        <div class="hint">nothing is uploaded · 100% local processing</div>
+      </div>
+
+      <div class="wrap hide" id="wrap">
+        <canvas id="view"></canvas>
+        <canvas id="mask"></canvas>
+        <div class="busy" id="busy"><div class="card"><span class="spin"></span><span id="busyText">Erasing sparkle…</span></div></div>
+      </div>
+      <input type="file" id="file" accept="image/*" class="hidden">
+    </section>
+
+    <aside class="console">
+      <div class="group">
+        <p class="glabel"><span class="n">01</span> Image</p>
+        <div class="meta">
+          <span class="fn" id="mName">No image loaded</span>
+          <span id="mDims">—</span>
+        </div>
+        <button class="btn ghost" id="loadNew" style="margin-top:12px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Load another image
+        </button>
+      </div>
+
+      <div class="group">
+        <p class="glabel"><span class="n">02</span> Result</p>
+        <div class="rstate" id="rstate">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.5 3.5 2.5 5.5 6 6-3.5.5-5.5 2.5-6 6-.5-3.5-2.5-5.5-6-6 3.5-.5 5.5-2.5 6-6Z"/></svg>
+          <span id="rstateText">Upload an image — I'll find and erase the sparkle automatically.</span>
+        </div>
+        <button class="btn primary" id="download" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+          Download image
+        </button>
+        <div class="row" style="margin-top:8px">
+          <button class="btn ghost" id="compare" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 8 2 11l3 3M19 8l3 3-3 3"/></svg>
+            Original
+          </button>
+          <button class="btn ghost" id="reprocess" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+            Redo auto
+          </button>
+        </div>
+      </div>
+
+      <details class="tune group" id="tune">
+        <summary>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+          Fine-tune
+          <svg class="chev" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+        </summary>
+        <div class="tune-body">
+          <p class="tip" style="margin-top:0">Auto-detect missed it, or removed the wrong thing? Adjust and re-run here.</p>
+
+          <p class="sub">Detection</p>
+          <div class="field" style="margin-top:0">
+            <div class="top"><label for="sens">Sensitivity</label><span class="val" id="sensV">0.55</span></div>
+            <input type="range" id="sens" min="0" max="1" step="0.01" value="0.55">
+          </div>
+          <button class="btn" id="detect" style="margin-top:12px" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.3-4.3"/><circle cx="11" cy="11" r="7"/></svg>
+            Re-detect only
+          </button>
+
+          <p class="sub">Brush the mask</p>
+          <div class="seg" role="group" aria-label="Brush mode">
+            <button id="mPaint" aria-pressed="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 3.5 20.5 8.5 8 21H3v-5z"/><path d="m13 6 5 5"/></svg>Paint
+            </button>
+            <button id="mErase" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21 12-12-6-6L3 13l4 4h5"/><path d="M22 21H7"/></svg>Erase
+            </button>
+          </div>
+          <div class="field">
+            <div class="top"><label for="brush">Brush size</label><span class="val" id="brushV">26 px</span></div>
+            <input type="range" id="brush" min="4" max="120" step="1" value="26">
+          </div>
+          <div class="field">
+            <div class="top"><label for="halo">Edge padding</label><span class="val" id="haloV">3 px</span></div>
+            <input type="range" id="halo" min="0" max="12" step="1" value="3">
+          </div>
+          <div class="row" style="margin-top:12px">
+            <button class="btn ghost danger" id="clearMask" disabled>Clear mask</button>
+            <button class="btn ghost" id="resetImg" disabled>Reset image</button>
+          </div>
+          <button class="btn primary" id="remove" style="margin-top:8px" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.5 3.5 2.5 5.5 6 6-3.5.5-5.5 2.5-6 6-.5-3.5-2.5-5.5-6-6 3.5-.5 5.5-2.5 6-6Z"/></svg>
+            Remove masked area
+          </button>
+        </div>
+      </details>
+
+      <div class="status"><span class="dot"></span><span id="status">Load an image to begin.</span></div>
+    </aside>
+  </main>
+
+  <footer>
+    <b>Private &amp; local:</b> images never leave your browser. This erases the <b>visible</b> sparkle only — invisible provenance watermarks (e.g. SynthID) are unaffected. Please use it on images you're permitted to edit.
+  </footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+
+  const S = {
+    img:null, W:0, H:0,
+    base:null,      // ImageData original
+    result:null,    // ImageData current (mutated by inpaint)
+    mask:null,      // Uint8Array 1/0
+    maskImg:null,
+    name:"image",
+    showOrig:false,
+    mode:"paint",
+    drawing:false, last:null,
+    overlayPending:false,
+  };
+
+  const view = $("view"), mask = $("mask");
+  const ctxV = view.getContext("2d");
+  const ctxM = mask.getContext("2d",{willReadFrequently:true});
+
+  /* ---------------- Theme ---------------- */
+  $("theme").addEventListener("click", () => {
+    const cur = document.documentElement.getAttribute("data-theme");
+    const dark = cur ? cur === "dark"
+      : matchMedia("(prefers-color-scheme:dark)").matches;
+    document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+  });
+
+  /* ---------------- Status ---------------- */
+  const status = t => $("status").textContent = t;
+
+  /* ---------------- Load ---------------- */
+  const drop = $("drop"), fileEl = $("file");
+  drop.addEventListener("click", () => fileEl.click());
+  drop.addEventListener("keydown", e => { if(e.key==="Enter"||e.key===" "){e.preventDefault();fileEl.click();} });
+  $("loadNew").addEventListener("click", () => fileEl.click());
+  fileEl.addEventListener("change", e => { if(e.target.files[0]) loadFile(e.target.files[0]); });
+
+  ["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e=>{e.preventDefault();drop.classList.add("hot");}));
+  ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e=>{e.preventDefault();drop.classList.remove("hot");}));
+  drop.addEventListener("drop", e => { const f=e.dataTransfer.files[0]; if(f) loadFile(f); });
+  window.addEventListener("dragover", e=>e.preventDefault());
+  window.addEventListener("drop", e=>{ e.preventDefault();
+    if(S.img) return; const f=e.dataTransfer && e.dataTransfer.files[0]; if(f) loadFile(f); });
+
+  function loadFile(file){
+    if(!file.type.startsWith("image/")){ status("That file isn't an image."); return; }
+    S.name = file.name.replace(/\.[^.]+$/,"") || "image";
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => { URL.revokeObjectURL(url); setupImage(im); };
+    im.onerror = () => { URL.revokeObjectURL(url); status("Couldn't read that image."); };
+    im.src = url;
+  }
+
+  function setupImage(im){
+    // Full native resolution — no downscaling. The image is processed pixel-for-pixel.
+    const w = im.naturalWidth, h = im.naturalHeight;
+    S.W = w; S.H = h;
+    view.width = mask.width = w; view.height = mask.height = h;
+    ctxV.drawImage(im, 0, 0, w, h);
+    S.base = ctxV.getImageData(0,0,w,h);
+    S.result = new ImageData(new Uint8ClampedArray(S.base.data), w, h);
+    S.mask = new Uint8Array(w*h);
+    S.maskImg = ctxM.createImageData(w,h);
+    S.showOrig = false;
+    drop.classList.add("hide"); $("wrap").classList.remove("hide");
+    syncOverlay(); renderView(); requestOverlay();
+    $("mName").textContent = S.name;
+    $("mDims").innerHTML = `<b>${w}</b> × <b>${h}</b> px · full resolution`;
+    ["detect","remove","compare","reprocess","clearMask","resetImg"].forEach(id=>$(id).disabled=false);
+    $("download").disabled = true;
+    autoRun();
+  }
+
+  /* ---------------- Automatic pipeline ---------------- */
+  function setState(kind,html){
+    const el=$("rstate"); el.className="rstate"+(kind?" "+kind:"");
+    $("rstateText").innerHTML=html;
+  }
+  function autoRun(){
+    setState("", "Working…");
+    busy(true,"Detecting the logo…");
+    setTimeout(()=>{
+      const found = autoDetect(true);
+      if(found){
+        $("busyText").textContent = "Removing the logo…";
+        setTimeout(()=>{
+          try{ inpaint(); afterRemoval(true); }
+          catch(err){ console.error(err); setState("warn","Something went wrong while removing."); }
+          finally{ busy(false); }
+        }, 20);
+      } else {
+        busy(false);
+        setState("warn","<b>No sparkle found automatically.</b> Open <b>Fine-tune</b> to brush over it, then remove.");
+        $("tune").open = true;
+        status("Tip: raise Sensitivity and hit Re-detect, or brush the logo manually.");
+      }
+    }, 30);
+  }
+  function afterRemoval(auto){
+    $("download").disabled = false;
+    setState("ok", auto ? "<b>Sparkle removed.</b> Download your image, or fine-tune below."
+                        : "<b>Area removed.</b> Download your image, or keep editing.");
+    status(auto ? "Done automatically — click Download." : "Removed. Click Download when you're happy.");
+  }
+
+  /* ---------------- Rendering ---------------- */
+  function renderView(){ ctxV.putImageData(S.showOrig ? S.base : S.result, 0, 0); }
+
+  function requestOverlay(){
+    if(S.overlayPending) return;
+    S.overlayPending = true;
+    requestAnimationFrame(() => { S.overlayPending = false; drawOverlay(); });
+  }
+  function drawOverlay(){
+    const d = S.maskImg.data, m = S.mask;
+    for(let i=0;i<m.length;i++){
+      const o=i*4;
+      if(m[i]){ d[o]=255; d[o+1]=45; d[o+2]=120; d[o+3]=145; }
+      else d[o+3]=0;
+    }
+    ctxM.putImageData(S.maskImg,0,0);
+  }
+
+  function syncOverlay(){
+    // match overlay CSS box to the rendered (scaled) view canvas
+    const r = view.getBoundingClientRect();
+    mask.style.width = r.width+"px";
+    mask.style.height = r.height+"px";
+  }
+  window.addEventListener("resize", () => { if(S.img||S.W) syncOverlay(); });
+  new ResizeObserver(()=>{ if(S.W) syncOverlay(); }).observe(view);
+
+  /* ---------------- Brushing ---------------- */
+  $("mPaint").addEventListener("click", ()=>setMode("paint"));
+  $("mErase").addEventListener("click", ()=>setMode("erase"));
+  function setMode(m){ S.mode=m; $("mPaint").setAttribute("aria-pressed",m==="paint"); $("mErase").setAttribute("aria-pressed",m==="erase"); }
+
+  const bind = (el,val,fmt)=>{ const up=()=>val.textContent=fmt(el.value); el.addEventListener("input",up); up(); };
+  bind($("brush"),$("brushV"),v=>v+" px");
+  bind($("halo"),$("haloV"),v=>v+" px");
+  bind($("sens"),$("sensV"),v=>Number(v).toFixed(2));
+
+  function evtToImg(e){
+    const r = mask.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width  * S.W;
+    const y = (e.clientY - r.top)  / r.height * S.H;
+    return { x:Math.round(x), y:Math.round(y), scale:S.W/r.width };
+  }
+  function stamp(ix,iy,r,val){
+    const r2=r*r, W=S.W,H=S.H,m=S.mask;
+    const x0=Math.max(0,ix-r|0), x1=Math.min(W-1,ix+r|0);
+    const y0=Math.max(0,iy-r|0), y1=Math.min(H-1,iy+r|0);
+    for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
+      const dx=x-ix, dy=y-iy; if(dx*dx+dy*dy<=r2) m[y*W+x]=val;
+    }
+  }
+  function paintAt(p){
+    const r = Math.max(1, (+$("brush").value) * p.scale);
+    const val = S.mode==="paint" ? 1 : 0;
+    if(S.last){
+      const dx=p.x-S.last.x, dy=p.y-S.last.y, dist=Math.hypot(dx,dy);
+      const steps=Math.max(1,Math.ceil(dist/(r*0.5)));
+      for(let i=1;i<=steps;i++) stamp(S.last.x+dx*i/steps, S.last.y+dy*i/steps, r, val);
+    } else stamp(p.x,p.y,r,val);
+    S.last=p; requestOverlay();
+  }
+  mask.addEventListener("pointerdown", e=>{ if(!S.W)return; mask.setPointerCapture(e.pointerId); S.drawing=true; S.last=null; paintAt(evtToImg(e)); });
+  mask.addEventListener("pointermove", e=>{ if(S.drawing) paintAt(evtToImg(e)); });
+  const endDraw=()=>{ S.drawing=false; S.last=null; };
+  mask.addEventListener("pointerup", endDraw);
+  mask.addEventListener("pointercancel", endDraw);
+
+  $("clearMask").addEventListener("click", ()=>{ if(!S.mask)return; S.mask.fill(0); requestOverlay(); status("Mask cleared."); });
+
+  /* ---------------- Auto-detect ---------------- */
+  $("detect").addEventListener("click", ()=>{
+    const found = autoDetect(false);
+    if(found) status("Sparkle candidate highlighted — brush to fix, then Remove masked area.");
+    else status("Nothing detected — raise sensitivity, or brush the logo manually.");
+  });
+  // --- Sparkle shape templates (the actual 4-point concave star), built once ---
+  const TG = 32;                 // template grid resolution
+  let TEMPLATES = null;
+  function buildTemplates(){
+    const out = [];
+    for(const rot of [0, Math.PI/4]){          // upright + 45° (both common orientations)
+      const cv = document.createElement("canvas"); cv.width = cv.height = TG;
+      const c = cv.getContext("2d");
+      c.clearRect(0,0,TG,TG);
+      c.translate(TG/2, TG/2); c.rotate(rot);
+      const R = TG*0.46;
+      c.beginPath();
+      c.moveTo(0,-R);
+      c.quadraticCurveTo(0,0, R,0);            // concave sides bow toward the centre
+      c.quadraticCurveTo(0,0, 0,R);
+      c.quadraticCurveTo(0,0, -R,0);
+      c.quadraticCurveTo(0,0, 0,-R);
+      c.closePath(); c.fillStyle="#fff"; c.fill();
+      const d = c.getImageData(0,0,TG,TG).data, grid = new Uint8Array(TG*TG); let area=0;
+      for(let i=0;i<TG*TG;i++) if(d[i*4+3]>40){ grid[i]=1; area++; }
+      out.push({grid, area});
+    }
+    return out;
+  }
+  // How closely a candidate blob matches the sparkle shape (best IoU over orientations)
+  function shapeMatch(comp, rw, minx, miny, bw, bh){
+    const grid = new Uint8Array(TG*TG); let carea=0;
+    for(const p of comp){
+      const px = (p % rw) - minx, py = ((p/rw)|0) - miny;
+      const gx = Math.min(TG-1, (px/bw*TG)|0), gy = Math.min(TG-1, (py/bh*TG)|0);
+      const gi = gy*TG+gx; if(!grid[gi]){ grid[gi]=1; carea++; }
+    }
+    let best=0;
+    for(const t of TEMPLATES){
+      let inter=0;
+      for(let i=0;i<TG*TG;i++) if(grid[i] && t.grid[i]) inter++;
+      const uni = carea + t.area - inter;
+      if(uni>0) best = Math.max(best, inter/uni);
+    }
+    return best;
+  }
+
+  // Per-channel median colour of a region (robust background estimate)
+  function medianBG(src,W,x0,y0,x1,y1){
+    const hr=new Uint32Array(256), hg=new Uint32Array(256), hb=new Uint32Array(256); let n=0;
+    for(let y=y0;y<y1;y+=2) for(let x=x0;x<x1;x+=2){ const i=(y*W+x)*4; hr[src[i]]++; hg[src[i+1]]++; hb[src[i+2]]++; n++; }
+    const med=h=>{ let c=0; const half=n>>1; for(let v=0;v<256;v++){ c+=h[v]; if(c>=half) return v; } return 128; };
+    return [med(hr),med(hg),med(hb)];
+  }
+
+  // Scan one rectangle for a sparkle-shaped blob across several thresholds; best candidate or null.
+  // Reusable buffers so the multi-threshold sweep doesn't re-allocate.
+  const _buf = {rw:0,rh:0,bin:null,tmp:null,lab:null};
+  function scanRegion(src,W,H,x0,y0,x1,y1,opt){
+    const rw=x1-x0, rh=y1-y0;
+    if(rw<10||rh<10) return null;
+    if(_buf.rw!==rw || _buf.rh!==rh || _buf.bin.length<rw*rh){
+      _buf.rw=rw; _buf.rh=rh; _buf.bin=new Uint8Array(rw*rh); _buf.tmp=new Uint8Array(rw*rh); _buf.lab=new Uint8Array(rw*rh);
+    }
+    const bin=_buf.bin, tmp=_buf.tmp, lab=_buf.lab;
+    const [br,bg,bb]=medianBG(src,W,x0,y0,x1,y1);
+    const limit=rw*rh*0.5, stack=[];
+    let best=null;
+    for(const thr of opt.thrList){
+      const t2=thr*thr;
+      for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+        const i=((y+y0)*W+(x+x0))*4;
+        const dr=src[i]-br, dg=src[i+1]-bg, db=src[i+2]-bb;
+        bin[y*rw+x] = (dr*dr+dg*dg+db*db > t2) ? 1 : 0;
+      }
+      // morphological close (1px dilate) so thin anti-aliased gaps don't split the sparkle
+      for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){
+        const i=y*rw+x; let v=bin[i];
+        if(!v && ((x>0&&bin[i-1])||(x<rw-1&&bin[i+1])||(y>0&&bin[i-rw])||(y<rh-1&&bin[i+rw]))) v=1;
+        tmp[i]=v;
+      }
+      lab.fill(0);
+      for(let sy=0;sy<rh;sy++) for(let sx=0;sx<rw;sx++){
+        const si=sy*rw+sx;
+        if(!tmp[si]||lab[si]) continue;
+        let minx=sx,maxx=sx,miny=sy,maxy=sy,area=0,sumx=0,sumy=0,over=false;
+        const comp=[]; stack.length=0; stack.push(si); lab[si]=1;
+        while(stack.length){
+          const p=stack.pop(); comp.push(p);
+          const px=p%rw, py=(p/rw)|0; area++; sumx+=px; sumy+=py;
+          if(px<minx)minx=px; if(px>maxx)maxx=px; if(py<miny)miny=py; if(py>maxy)maxy=py;
+          for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+            if(!dx&&!dy) continue;
+            const nx=px+dx, ny=py+dy;
+            if(nx<0||ny<0||nx>=rw||ny>=rh) continue;
+            const ni=ny*rw+nx;
+            if(tmp[ni]&&!lab[ni]){ lab[ni]=1; stack.push(ni); }
+          }
+          if(area>limit){ over=true; break; }   // giant background blob — abandon
+        }
+        if(over || area<24) continue;
+        const bw=maxx-minx+1, bh=maxy-miny+1;
+        const squ=Math.min(bw,bh)/Math.max(bw,bh);
+        const sizeFrac=Math.max(bw,bh)/opt.sizeRef;
+        if(sizeFrac<opt.minSize || sizeFrac>opt.maxSize) continue;
+        if(squ<0.5) continue;                   // sparkle bbox is near-square
+        const iou = shapeMatch(comp, rw, minx, miny, bw, bh);
+        if(iou < opt.minIoU) continue;          // must actually look like the sparkle
+        let score = iou*2.4 + squ*0.4;
+        if(opt.bottomRef!==undefined){
+          const gcy=y0+sumy/area;
+          score += (gcy/opt.bottomRef)*0.5;     // prefer marks lower in the frame
+        }
+        if(opt.corner){
+          const gcx=x0+sumx/area, gcy=y0+sumy/area;
+          const cd=Math.hypot(gcx-opt.corner.cx, gcy-opt.corner.cy)/opt.sizeRef;
+          score += (1-Math.min(1,cd))*0.6;
+        }
+        if(!best || score>best.score) best={score,iou,comp,x0,y0,rw};
+      }
+    }
+    return best;
+  }
+
+  function autoDetect(silent){
+    if(!TEMPLATES) TEMPLATES = buildTemplates();
+    const {W,H} = S, src = S.result.data, minD = Math.min(W,H);
+    const sens = +$("sens").value;
+    const minIoU = 0.28 + (1-sens)*0.22;        // higher sensitivity -> more lenient
+    const thrList = [20,32,48,70,100];          // sweep contrast levels
+    let best=null;
+
+    // 1) Bottom band — where the Gemini / Imagen watermark actually sits (any horizontal position)
+    const band = Math.max(48, Math.round(minD*0.26));
+    best = scanRegion(src,W,H, 0, Math.max(0,H-band), W, H,
+      {thrList, sizeRef:band, minSize:0.12, maxSize:1.3, minIoU, bottomRef:H});
+
+    // 2) Fallback: the four corners
+    if(!best){
+      const s=Math.max(28,Math.round(minD*0.28));
+      const corners=[{cx:0,cy:0,x0:0,y0:0},{cx:W-1,cy:0,x0:W-s,y0:0},{cx:0,cy:H-1,x0:0,y0:H-s},{cx:W-1,cy:H-1,x0:W-s,y0:H-s}];
+      for(const c of corners){
+        const x0=Math.max(0,c.x0), y0=Math.max(0,c.y0);
+        const r=scanRegion(src,W,H,x0,y0,Math.min(W,x0+s),Math.min(H,y0+s),
+          {thrList, sizeRef:s, minSize:0.06, maxSize:0.99, minIoU:minIoU+0.06, corner:c});
+        if(r && (!best || r.score>best.score)) best=r;
+      }
+    }
+
+    // 3) Fallback: whole image (stricter shape match)
+    if(!best){
+      best = scanRegion(src,W,H,0,0,W,H, {thrList, sizeRef:minD, minSize:0.03, maxSize:0.85, minIoU:0.5});
+    }
+
+    if(best){
+      S.mask.fill(0);
+      for(const p of best.comp){ const px=p%best.rw, py=(p/best.rw)|0; S.mask[(best.y0+py)*W + (best.x0+px)]=1; }
+      requestOverlay();
+      return true;
+    }
+    return false;
+  }
+
+  /* ---------------- Inpainting ---------------- */
+  $("remove").addEventListener("click", () => {
+    if(!S.mask.some(v=>v)){ status("Mask is empty — detect or brush the logo first."); return; }
+    busy(true,"Erasing…");
+    setTimeout(()=>{ try{ inpaint(); afterRemoval(false); }
+      catch(err){ status("Something went wrong during removal."); console.error(err); }
+      finally{ busy(false); } }, 30);
+  });
+  $("reprocess").addEventListener("click", ()=>{
+    S.result = new ImageData(new Uint8ClampedArray(S.base.data), S.W, S.H);
+    S.mask.fill(0); S.showOrig=false; renderView(); requestOverlay();
+    $("download").disabled = true;
+    autoRun();
+  });
+  function busy(on,txt){ if(txt) $("busyText").textContent=txt; $("busy").classList.toggle("on",on); }
+
+  function dilate(m,W,H,r){
+    if(r<=0) return m.slice();
+    let a=m.slice(), b=new Uint8Array(W*H);
+    for(let k=0;k<r;k++){
+      for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+        const i=y*W+x;
+        if(a[i]){ b[i]=1; continue; }
+        let v=0;
+        if(x>0&&a[i-1])v=1; else if(x<W-1&&a[i+1])v=1;
+        else if(y>0&&a[i-W])v=1; else if(y<H-1&&a[i+W])v=1;
+        else if(x>0&&y>0&&a[i-W-1])v=1; else if(x<W-1&&y>0&&a[i-W+1])v=1;
+        else if(x>0&&y<H-1&&a[i+W-1])v=1; else if(x<W-1&&y<H-1&&a[i+W+1])v=1;
+        b[i]=v;
+      }
+      const t=a; a=b; b=t;
+    }
+    return a;
+  }
+
+  // Gortler pull-push: fills unknown (weight 0) pixels with smooth low-frequency content
+  function pullPush(W,H,col,wt){
+    const levels=[{W,H,col,wt}];
+    let cW=W,cH=H,cCol=col,cWt=wt;
+    while(cW>1 || cH>1){
+      const nW=Math.max(1,Math.ceil(cW/2)), nH=Math.max(1,Math.ceil(cH/2));
+      const nCol=new Float32Array(nW*nH*3), nWt=new Float32Array(nW*nH);
+      for(let y=0;y<nH;y++) for(let x=0;x<nW;x++){
+        let sw=0,r=0,g=0,b=0;
+        for(let dy=0;dy<2;dy++) for(let dx=0;dx<2;dx++){
+          const sx=x*2+dx, sy=y*2+dy;
+          if(sx<cW&&sy<cH){ const si=sy*cW+sx, w=cWt[si]; sw+=w; r+=cCol[si*3]*w; g+=cCol[si*3+1]*w; b+=cCol[si*3+2]*w; }
+        }
+        const di=y*nW+x;
+        if(sw>0){ nCol[di*3]=r/sw; nCol[di*3+1]=g/sw; nCol[di*3+2]=b/sw; }
+        nWt[di]= sw>=1 ? 1 : sw;
+      }
+      levels.push({W:nW,H:nH,col:nCol,wt:nWt});
+      cW=nW; cH=nH; cCol=nCol; cWt=nWt;
+    }
+    for(let l=levels.length-2;l>=0;l--){
+      const fine=levels[l], coarse=levels[l+1];
+      for(let y=0;y<fine.H;y++) for(let x=0;x<fine.W;x++){
+        const i=y*fine.W+x, w=fine.wt[i];
+        if(w<1){
+          const cx=Math.min(coarse.W-1,x>>1), cy=Math.min(coarse.H-1,y>>1), ci=cy*coarse.W+cx, iw=1-w;
+          fine.col[i*3]  = fine.col[i*3]*w   + coarse.col[ci*3]*iw;
+          fine.col[i*3+1]= fine.col[i*3+1]*w + coarse.col[ci*3+1]*iw;
+          fine.col[i*3+2]= fine.col[i*3+2]*w + coarse.col[ci*3+2]*iw;
+          fine.wt[i]=1;
+        }
+      }
+    }
+  }
+
+  function inpaint(){
+    const W=S.W, H=S.H, N=W*H, src=S.result.data;
+    const mm = dilate(S.mask, W, H, +$("halo").value);
+    // bounding box of hole (for diffusion refinement)
+    let minx=W,miny=H,maxx=-1,maxy=-1;
+    for(let y=0;y<H;y++) for(let x=0;x<W;x++){ if(mm[y*W+x]){ if(x<minx)minx=x;if(x>maxx)maxx=x;if(y<miny)miny=y;if(y>maxy)maxy=y; } }
+    if(maxx<0) return;
+
+    const col=new Float32Array(N*3), wt=new Float32Array(N);
+    for(let i=0;i<N;i++){
+      if(mm[i]) wt[i]=0;
+      else { wt[i]=1; col[i*3]=src[i*4]; col[i*3+1]=src[i*4+1]; col[i*3+2]=src[i*4+2]; }
+    }
+    pullPush(W,H,col,wt);   // smooth initial fill for every hole pixel
+
+    // diffusion refine, restricted to hole bbox (+pad)
+    const pad=2;
+    const bx0=Math.max(0,minx-pad), by0=Math.max(0,miny-pad), bx1=Math.min(W-1,maxx+pad), by1=Math.min(H-1,maxy+pad);
+    let buf=new Float32Array(col), tmp=new Float32Array(col);
+    const ITERS=48;
+    for(let it=0; it<ITERS; it++){
+      for(let y=by0;y<=by1;y++) for(let x=bx0;x<=bx1;x++){
+        const i=y*W+x;
+        if(!mm[i]) continue;
+        let r=0,g=0,b=0,c=0;
+        if(x>0){const j=(i-1)*3;r+=buf[j];g+=buf[j+1];b+=buf[j+2];c++;}
+        if(x<W-1){const j=(i+1)*3;r+=buf[j];g+=buf[j+1];b+=buf[j+2];c++;}
+        if(y>0){const j=(i-W)*3;r+=buf[j];g+=buf[j+1];b+=buf[j+2];c++;}
+        if(y<H-1){const j=(i+W)*3;r+=buf[j];g+=buf[j+1];b+=buf[j+2];c++;}
+        const o=i*3; tmp[o]=r/c; tmp[o+1]=g/c; tmp[o+2]=b/c;
+      }
+      // copy refined hole pixels back into buf
+      for(let y=by0;y<=by1;y++) for(let x=bx0;x<=bx1;x++){
+        const i=y*W+x; if(mm[i]){ const o=i*3; buf[o]=tmp[o]; buf[o+1]=tmp[o+1]; buf[o+2]=tmp[o+2]; }
+      }
+    }
+    for(let i=0;i<N;i++) if(mm[i]){ src[i*4]=buf[i*3]; src[i*4+1]=buf[i*3+1]; src[i*4+2]=buf[i*3+2]; src[i*4+3]=255; }
+    ctxV.putImageData(S.result,0,0);
+    S.mask.fill(0); requestOverlay(); S.showOrig=false;
+  }
+
+  /* ---------------- Compare / Reset ---------------- */
+  const cmp=$("compare");
+  const showOrig=on=>{ S.showOrig=on; renderView(); cmp.style.background=on?"var(--surface-2)":""; };
+  cmp.addEventListener("pointerdown",()=>showOrig(true));
+  cmp.addEventListener("pointerup",()=>showOrig(false));
+  cmp.addEventListener("pointerleave",()=>showOrig(false));
+  cmp.addEventListener("pointercancel",()=>showOrig(false));
+
+  $("resetImg").addEventListener("click", ()=>{
+    S.result = new ImageData(new Uint8ClampedArray(S.base.data), S.W, S.H);
+    S.mask.fill(0); S.showOrig=false; renderView(); requestOverlay();
+    $("download").disabled = true;
+    setState("", "Image reset to original. Re-detect or brush to remove the logo.");
+    status("Reset to the original image.");
+  });
+
+  /* ---------------- Download ---------------- */
+  $("download").addEventListener("click", async ()=>{
+    if(!S.result) return;
+    const c=document.createElement("canvas"); c.width=S.W; c.height=S.H;
+    c.getContext("2d").putImageData(S.result,0,0);
+    const filename=(S.name||"image")+"-clean.png";
+    c.toBlob(async blob=>{
+      if(!blob){ status("Couldn't build the PNG."); return; }
+      // Preferred path in the hosted app: the viewer-mediated downloads capability
+      let dl=null;
+      try{ dl = window.claude && claude.use ? await claude.use("downloads") : null; }catch(_){}
+      if(dl){
+        try{ await dl.save({filename, data:blob}); status("Saved."); return; }
+        catch(err){ if(err && err.code==="declined"){ status("Download cancelled."); return; } }
+      }
+      // Fallback: plain link (works when opened as a local file)
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a"); a.href=url; a.download=filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
+      status("Downloaded. If nothing appeared, check your browser's download bar.");
+    }, "image/png");
+  });
+
+})();
+</script>
+
+</body>
+</html>
