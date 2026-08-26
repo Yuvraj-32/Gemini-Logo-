@@ -90,6 +90,8 @@
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid var(--surface)}
   input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid var(--surface)}
   .tip{font-size:12px;color:var(--muted);margin:10px 0 0;line-height:1.45}
+  .chk{display:flex;align-items:center;gap:9px;margin-top:14px;font-size:13.5px;font-weight:600;cursor:pointer}
+  .chk input{width:17px;height:17px;accent-color:var(--accent);cursor:pointer}
   .bar{height:8px;border-radius:99px;background:var(--border-strong);overflow:hidden;margin-top:12px}
   .bar > i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent-strong));transition:width .2s}
   .rstate{display:flex;align-items:flex-start;gap:10px;padding:12px 13px;border-radius:11px;margin-bottom:12px;font-size:13px;line-height:1.4;border:1px solid var(--border);background:var(--surface-2);color:var(--muted)}
@@ -178,6 +180,7 @@
           <input type="range" id="interval" min="1" max="60" step="1" value="15">
         </div>
         <p class="tip">The watermark position is usually fixed, so detecting periodically (and reusing the mask between) is much faster. Lower it if the logo moves.</p>
+        <label class="chk"><input type="checkbox" id="keepAudio" checked> Keep original audio</label>
       </div>
 
       <div class="group">
@@ -210,6 +213,16 @@
   "use strict";
   const $ = id => document.getElementById(id);
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+  // Wait until a codec's queue drains below `max`, or fail loudly instead of hanging forever.
+  const drainTo = (getSize, max, label) => new Promise((resolve, reject) => {
+    const start = performance.now();
+    const tick = () => {
+      if(getSize() <= max) return resolve();
+      if(performance.now() - start > 60000) return reject(new Error((label || "codec") + " stalled — queue stopped draining"));
+      setTimeout(tick, 4);
+    };
+    tick();
+  });
   const status = t => $("status").textContent = t;
   const setState = (kind, html) => { $("rstate").className = "rstate" + (kind ? " " + kind : ""); $("rstateText").innerHTML = html; };
 
@@ -535,13 +548,16 @@
         sens: +$("sens").value,
         halo: +$("halo").value,
         interval: +$("interval").value,
+        keepAudio: $("keepAudio").checked,
         onProgress: (done,total) => {
-          const pct = total ? Math.round(done/total*100) : 0;
+          const pct = total ? Math.min(100, Math.round(done/total*100)) : 0;
           $("busyBar").style.width = pct + "%";
           const el = (performance.now()-t0)/1000;
           const eta = done ? (el/done)*(total-done) : 0;
+          $("busyTitle").textContent = "Cleaning frames…";
           $("busySub").textContent = `${done} / ${total} frames · ${pct}% · ~${eta.toFixed(0)}s left`;
-        }
+        },
+        onPhase: label => { $("busyBar").style.width = "100%"; $("busyTitle").textContent = label; $("busySub").textContent = "Almost there…"; }
       });
       S.blob = blob;
       S.blobUrl = URL.createObjectURL(blob);
@@ -564,11 +580,13 @@
     const { mp4, vTrack, aTrack, vSamples, aSamples } = S.demuxed;
     const W = S.W, H = S.H, fps = S.fps;
     cvs.width = W; cvs.height = H;
+    const keepAudio = opts.keepAudio && !!aTrack;
+    console.log("[transcode] start", { W, H, fps, videoFrames: vSamples.length, audioFrames: aSamples.length, keepAudio });
 
     const muxer = new Mp4Muxer.Muxer({
       target: new Mp4Muxer.ArrayBufferTarget(),
       video: { codec: "avc", width: W, height: H },
-      audio: aTrack ? { codec: "aac", numberOfChannels: aTrack.audio.channel_count, sampleRate: aTrack.audio.sample_rate } : undefined,
+      audio: keepAudio ? { codec: "aac", numberOfChannels: aTrack.audio.channel_count, sampleRate: aTrack.audio.sample_rate } : undefined,
       fastStart: "in-memory",
       firstTimestampBehavior: "offset"
     });
@@ -581,40 +599,41 @@
       try{ const s = await VideoEncoder.isConfigSupported(cfg); if(s.supported){ encCfg = cfg; break; } }catch(_){}
     }
     if(!encCfg) throw new Error("No supported H.264 encoder configuration on this device.");
+    console.log("[transcode] encoder config", encCfg);
 
     let fatal = null;
     const encoder = new VideoEncoder({
-      output: (chunk, meta) => { try{ muxer.addVideoChunk(chunk, meta); }catch(e){ fatal = e; } },
-      error: e => { fatal = e; }
+      output: (chunk, meta) => { try{ muxer.addVideoChunk(chunk, meta); }catch(e){ fatal = e; console.error("[muxer.addVideoChunk]", e); } },
+      error: e => { fatal = e; console.error("[encoder]", e); }
     });
     encoder.configure(encCfg);
     const gop = Math.max(1, Math.round(fps*2));
 
-    const decoder = new VideoDecoder({ output: f => ready.push(f), error: e => { fatal = e; } });
+    const frames = [];
+    const decoder = new VideoDecoder({ output: f => frames.push(f), error: e => { fatal = e; console.error("[decoder]", e); } });
     decoder.configure({ codec: vTrack.codec, description: videoDescription(mp4, vTrack.id), codedWidth: W, codedHeight: H, hardwareAcceleration: "no-preference" });
 
-    const ready = [];
-    let lastMask = null, encCount = 0, processed = 0;
+    let lastMask = null, encCount = 0;
 
-    async function drainOne(){
-      const frame = ready.shift();
-      if(!frame) { await sleep(0); return; }
+    async function processFrame(frame){
       cctx.drawImage(frame, 0, 0, W, H);
       const t = frame.timestamp, dur = frame.duration || Math.round(1e6/fps);
       frame.close();
       const img = cctx.getImageData(0, 0, W, H);
-      if(processed % opts.interval === 0){
+      if(encCount % opts.interval === 0){
         const m = detectMask(img.data, W, H, opts.sens);
         if(m) lastMask = m;
       }
       if(lastMask){ inpaintMask(img.data, W, H, lastMask, opts.halo); cctx.putImageData(img, 0, 0); }
       const out = new VideoFrame(cvs, { timestamp: t, duration: dur });
-      while(encoder.encodeQueueSize > 6){ if(fatal) break; await sleep(0); }
+      await drainTo(() => encoder.encodeQueueSize, 4, "encoder");   // backpressure with a timeout
+      if(fatal) { out.close(); throw fatal; }
       encoder.encode(out, { keyFrame: (encCount % gop) === 0 });
-      out.close(); encCount++; processed++;
-      opts.onProgress(processed, S.nb);
+      out.close(); encCount++;
+      opts.onProgress(encCount, S.nb);
     }
 
+    // Feed encoded chunks in; process decoded frames as they come out (bounded memory)
     for(let i=0;i<vSamples.length;i++){
       if(fatal) throw fatal;
       const s = vSamples[i];
@@ -624,29 +643,46 @@
         duration: Math.round(s.duration * 1e6 / s.timescale),
         data: s.data
       }));
-      while(decoder.decodeQueueSize > 8 || ready.length > 8){ if(fatal) throw fatal; await drainOne(); }
+      while(frames.length){ if(fatal) throw fatal; await processFrame(frames.shift()); }
+      await drainTo(() => decoder.decodeQueueSize, 16, "decoder");
+      while(frames.length){ if(fatal) throw fatal; await processFrame(frames.shift()); }
     }
+    console.log("[transcode] fed all samples; flushing decoder");
     await decoder.flush();
-    while(ready.length){ if(fatal) throw fatal; await drainOne(); }
+    while(frames.length){ if(fatal) throw fatal; await processFrame(frames.shift()); }
+    console.log("[transcode] decoded/encoded frames:", encCount, "; flushing encoder");
     await encoder.flush();
     if(fatal) throw fatal;
+    console.log("[transcode] encoder flushed");
+    opts.onProgress(S.nb, S.nb);
 
-    // Copy the original audio through, unchanged
-    if(aTrack){
-      const adesc = audioDescription(mp4, aTrack.id);
-      for(let i=0;i<aSamples.length;i++){
-        const s = aSamples[i];
-        const chunk = new EncodedAudioChunk({
-          type: s.is_sync ? "key" : "delta",
-          timestamp: Math.round(s.cts * 1e6 / s.timescale),
-          duration: Math.round(s.duration * 1e6 / s.timescale),
-          data: s.data
-        });
-        muxer.addAudioChunk(chunk, i===0 ? { decoderConfig: { codec:"mp4a.40.2", sampleRate: aTrack.audio.sample_rate, numberOfChannels: aTrack.audio.channel_count, description: adesc } } : undefined);
+    // Copy the original audio through, unchanged. Never let audio hang the whole job.
+    if(keepAudio){
+      opts.onPhase("Muxing audio…");
+      try{
+        const adesc = audioDescription(mp4, aTrack.id);
+        console.log("[transcode] audio description bytes:", adesc && adesc.length);
+        for(let i=0;i<aSamples.length;i++){
+          const s = aSamples[i];
+          muxer.addAudioChunk(new EncodedAudioChunk({
+            type: s.is_sync ? "key" : "delta",
+            timestamp: Math.round(s.cts * 1e6 / s.timescale),
+            duration: Math.round(s.duration * 1e6 / s.timescale),
+            data: s.data
+          }), i===0 ? { decoderConfig: { codec:"mp4a.40.2", sampleRate: aTrack.audio.sample_rate, numberOfChannels: aTrack.audio.channel_count, description: adesc } } : undefined);
+        }
+        console.log("[transcode] audio chunks muxed:", aSamples.length);
+      }catch(e){
+        console.error("[transcode] audio mux failed — writing video only", e);
+        opts.onPhase("Audio couldn't be kept — writing video only…");
+        await sleep(600);
       }
     }
 
+    opts.onPhase("Finalizing MP4…");
+    console.log("[transcode] finalizing");
     muxer.finalize();
+    console.log("[transcode] done — bytes:", muxer.target.buffer.byteLength);
     return new Blob([muxer.target.buffer], { type: "video/mp4" });
   }
 
