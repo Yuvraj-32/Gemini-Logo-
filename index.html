@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<!-- Zip packaging for bulk download (MIT). Pure JS, no special browser API — safe in any host. -->
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
 
 <style>
   /* ---------- Tokens: darkroom console ---------- */
@@ -212,16 +214,27 @@
     font-size:11.5px;color:var(--muted);line-height:1.5}
   footer b{color:var(--text);font-weight:600}
 
-  /* export modal */
-  .modal{position:fixed;inset:0;display:none;place-items:center;padding:24px;z-index:50;
-    background:rgba(10,11,14,.55);backdrop-filter:blur(3px)}
-  .modal.on{display:grid}
-  .modal .box{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);
-    max-width:min(720px,100%);max-height:90vh;overflow:auto;padding:20px}
-  .modal h3{font-family:"Bricolage Grotesque",sans-serif;margin:0 0 4px;font-size:18px}
-  .modal p{margin:0 0 14px;color:var(--muted);font-size:13px}
-  .modal img{max-width:100%;border-radius:8px;border:1px solid var(--border);display:block}
-  .modal .acts{display:flex;gap:10px;margin-top:16px}
+  /* bulk grid */
+  .grid{width:100%;max-width:1120px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+    gap:14px;align-content:start}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;
+    cursor:pointer;transition:border-color .15s,transform .12s;display:flex;flex-direction:column;text-align:left}
+  .card:hover{border-color:var(--border-strong);transform:translateY(-2px)}
+  .card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .card .thumb{width:100%;aspect-ratio:1;object-fit:cover;background:var(--stage);display:block}
+  .card .cmeta{padding:9px 10px;display:flex;align-items:center;gap:8px;min-width:0}
+  .card .cname{flex:1;min-width:0;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .badge-dot{width:8px;height:8px;border-radius:50%;flex:none}
+  .badge-dot.done{background:var(--accent)}
+  .badge-dot.nomatch{background:var(--danger)}
+  .badge-dot.error{background:var(--danger)}
+  .card .cdl{border:0;background:transparent;color:var(--muted);cursor:pointer;padding:4px;border-radius:6px;
+    display:grid;place-items:center;flex:none}
+  .card .cdl:hover{color:var(--text);background:var(--surface-2)}
+  .card .cdl svg{width:15px;height:15px}
+  .batch-summary{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted);
+    display:flex;flex-direction:column;gap:4px}
+  .batch-summary b{color:var(--text);font-weight:500}
 
   .hidden{display:none!important}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -250,102 +263,134 @@
 
   <main>
     <section class="stage" id="stage">
-      <div class="drop" id="drop" role="button" tabindex="0" aria-label="Upload an image">
+      <div class="drop" id="drop" role="button" tabindex="0" aria-label="Upload images">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15l-5-5L5 21"/><path d="M3 16V5a2 2 0 0 1 2-2h11"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M17 3v6M20 6h-6" stroke-width="1.6"/></svg>
-        <h2>Drop an image here</h2>
-        <p>or click to browse — the logo is detected &amp; removed automatically</p>
+        <h2>Drop images here</h2>
+        <p>or click to browse — one or many. The logo is detected &amp; removed automatically</p>
         <div class="hint">nothing is uploaded · 100% local processing</div>
       </div>
 
       <div class="wrap hide" id="wrap">
         <canvas id="view"></canvas>
         <canvas id="mask"></canvas>
-        <div class="busy" id="busy"><div class="card"><span class="spin"></span><span id="busyText">Erasing sparkle…</span></div></div>
       </div>
-      <input type="file" id="file" accept="image/*" class="hidden">
+
+      <div class="grid hidden" id="grid"></div>
+
+      <div class="busy" id="busy"><div class="card"><span class="spin"></span><span id="busyText">Erasing sparkle…</span></div></div>
+
+      <input type="file" id="file" accept="image/*" multiple class="hidden">
     </section>
 
     <aside class="console">
-      <div class="group">
-        <p class="glabel"><span class="n">01</span> Image</p>
-        <div class="meta">
-          <span class="fn" id="mName">No image loaded</span>
-          <span id="mDims">—</span>
-        </div>
-        <button class="btn ghost" id="loadNew" style="margin-top:12px">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          Load another image
-        </button>
-      </div>
-
-      <div class="group">
-        <p class="glabel"><span class="n">02</span> Result</p>
-        <div class="rstate" id="rstate">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.5 3.5 2.5 5.5 6 6-3.5.5-5.5 2.5-6 6-.5-3.5-2.5-5.5-6-6 3.5-.5 5.5-2.5 6-6Z"/></svg>
-          <span id="rstateText">Upload an image — I'll find and erase the sparkle automatically.</span>
-        </div>
-        <button class="btn primary" id="download" disabled>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
-          Download image
-        </button>
-        <div class="row" style="margin-top:8px">
-          <button class="btn ghost" id="compare" disabled>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 8 2 11l3 3M19 8l3 3-3 3"/></svg>
-            Original
+      <div id="itemPanel">
+        <div class="group">
+          <p class="glabel"><span class="n">01</span> Image</p>
+          <button class="btn ghost hidden" id="backToGrid" style="margin-bottom:12px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            All images
           </button>
-          <button class="btn ghost" id="reprocess" disabled>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
-            Redo auto
+          <div class="meta">
+            <span class="fn" id="mName">No image loaded</span>
+            <span id="mDims">—</span>
+          </div>
+          <button class="btn ghost" id="loadNew" style="margin-top:12px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Load more images
           </button>
         </div>
-      </div>
 
-      <details class="tune group" id="tune">
-        <summary>
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
-          Fine-tune
-          <svg class="chev" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-        </summary>
-        <div class="tune-body">
-          <p class="tip" style="margin-top:0">Auto-detect missed it, or removed the wrong thing? Adjust and re-run here.</p>
-
-          <p class="sub">Detection</p>
-          <div class="field" style="margin-top:0">
-            <div class="top"><label for="sens">Sensitivity</label><span class="val" id="sensV">0.55</span></div>
-            <input type="range" id="sens" min="0" max="1" step="0.01" value="0.55">
-          </div>
-          <button class="btn" id="detect" style="margin-top:12px" disabled>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.3-4.3"/><circle cx="11" cy="11" r="7"/></svg>
-            Re-detect only
-          </button>
-
-          <p class="sub">Brush the mask</p>
-          <div class="seg" role="group" aria-label="Brush mode">
-            <button id="mPaint" aria-pressed="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 3.5 20.5 8.5 8 21H3v-5z"/><path d="m13 6 5 5"/></svg>Paint
-            </button>
-            <button id="mErase" aria-pressed="false">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21 12-12-6-6L3 13l4 4h5"/><path d="M22 21H7"/></svg>Erase
-            </button>
-          </div>
-          <div class="field">
-            <div class="top"><label for="brush">Brush size</label><span class="val" id="brushV">26 px</span></div>
-            <input type="range" id="brush" min="4" max="120" step="1" value="26">
-          </div>
-          <div class="field">
-            <div class="top"><label for="halo">Edge padding</label><span class="val" id="haloV">3 px</span></div>
-            <input type="range" id="halo" min="0" max="12" step="1" value="3">
-          </div>
-          <div class="row" style="margin-top:12px">
-            <button class="btn ghost danger" id="clearMask" disabled>Clear mask</button>
-            <button class="btn ghost" id="resetImg" disabled>Reset image</button>
-          </div>
-          <button class="btn primary" id="remove" style="margin-top:8px" disabled>
+        <div class="group">
+          <p class="glabel"><span class="n">02</span> Result</p>
+          <div class="rstate" id="rstate">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.5 3.5 2.5 5.5 6 6-3.5.5-5.5 2.5-6 6-.5-3.5-2.5-5.5-6-6 3.5-.5 5.5-2.5 6-6Z"/></svg>
-            Remove masked area
+            <span id="rstateText">Upload an image — I'll find and erase the sparkle automatically.</span>
+          </div>
+          <button class="btn primary" id="download" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            Download image
+          </button>
+          <div class="row" style="margin-top:8px">
+            <button class="btn ghost" id="compare" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 8 2 11l3 3M19 8l3 3-3 3"/></svg>
+              Original
+            </button>
+            <button class="btn ghost" id="reprocess" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+              Redo auto
+            </button>
+          </div>
+        </div>
+
+        <details class="tune group" id="tune">
+          <summary>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+            Fine-tune
+            <svg class="chev" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </summary>
+          <div class="tune-body">
+            <p class="tip" style="margin-top:0">Auto-detect missed it, or removed the wrong thing? Adjust and re-run here.</p>
+
+            <p class="sub">Detection</p>
+            <div class="field" style="margin-top:0">
+              <div class="top"><label for="sens">Sensitivity</label><span class="val" id="sensV">0.55</span></div>
+              <input type="range" id="sens" min="0" max="1" step="0.01" value="0.55">
+            </div>
+            <button class="btn" id="detect" style="margin-top:12px" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.3-4.3"/><circle cx="11" cy="11" r="7"/></svg>
+              Re-detect only
+            </button>
+
+            <p class="sub">Brush the mask</p>
+            <div class="seg" role="group" aria-label="Brush mode">
+              <button id="mPaint" aria-pressed="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 3.5 20.5 8.5 8 21H3v-5z"/><path d="m13 6 5 5"/></svg>Paint
+              </button>
+              <button id="mErase" aria-pressed="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21 12-12-6-6L3 13l4 4h5"/><path d="M22 21H7"/></svg>Erase
+              </button>
+            </div>
+            <div class="field">
+              <div class="top"><label for="brush">Brush size</label><span class="val" id="brushV">26 px</span></div>
+              <input type="range" id="brush" min="4" max="120" step="1" value="26">
+            </div>
+            <div class="field">
+              <div class="top"><label for="halo">Edge padding</label><span class="val" id="haloV">3 px</span></div>
+              <input type="range" id="halo" min="0" max="12" step="1" value="3">
+            </div>
+            <div class="row" style="margin-top:12px">
+              <button class="btn ghost danger" id="clearMask" disabled>Clear mask</button>
+              <button class="btn ghost" id="resetImg" disabled>Reset image</button>
+            </div>
+            <button class="btn primary" id="remove" style="margin-top:8px" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.5 3.5 2.5 5.5 6 6-3.5.5-5.5 2.5-6 6-.5-3.5-2.5-5.5-6-6 3.5-.5 5.5-2.5 6-6Z"/></svg>
+              Remove masked area
+            </button>
+          </div>
+        </details>
+      </div>
+
+      <div id="batchPanel" class="hidden">
+        <div class="group">
+          <p class="glabel"><span class="n">01</span> Batch</p>
+          <div class="batch-summary">
+            <span id="batchCount">0 images</span>
+            <span id="batchBreakdown">—</span>
+          </div>
+          <button class="btn ghost" id="addMore" style="margin-top:12px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Add more images
           </button>
         </div>
-      </details>
+        <div class="group">
+          <p class="glabel"><span class="n">02</span> Download</p>
+          <button class="btn primary" id="downloadAll">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            Download all (ZIP)
+          </button>
+          <p class="tip">Or click any image below to review, fine-tune, or download it on its own.</p>
+        </div>
+      </div>
 
       <div class="status"><span class="dot"></span><span id="status">Load an image to begin.</span></div>
     </aside>
@@ -361,6 +406,9 @@
   "use strict";
   const $ = id => document.getElementById(id);
 
+  // S is the "currently open" item's working state — always this same object, never reassigned,
+  // so every existing handler below keeps working unchanged. Bulk mode just copies each item's
+  // data into S when opened, and copies it back out (see snapshotToItem) when leaving.
   const S = {
     img:null, W:0, H:0,
     base:null,      // ImageData original
@@ -373,6 +421,10 @@
     drawing:false, last:null,
     overlayPending:false,
   };
+  // All uploaded images live here — length 1 behaves exactly like the single-image tool always did;
+  // length >1 shows the grid.
+  const BATCH = { items: [], activeIndex: -1 };
+  let ingesting = false;
 
   const view = $("view"), mask = $("mask");
   const ctxV = view.getContext("2d");
@@ -388,49 +440,171 @@
 
   /* ---------------- Status ---------------- */
   const status = t => $("status").textContent = t;
+  const sleep = ms => new Promise(r=>setTimeout(r,ms));
 
   /* ---------------- Load ---------------- */
   const drop = $("drop"), fileEl = $("file");
   drop.addEventListener("click", () => fileEl.click());
   drop.addEventListener("keydown", e => { if(e.key==="Enter"||e.key===" "){e.preventDefault();fileEl.click();} });
   $("loadNew").addEventListener("click", () => fileEl.click());
-  fileEl.addEventListener("change", e => { if(e.target.files[0]) loadFile(e.target.files[0]); });
+  $("addMore").addEventListener("click", () => fileEl.click());
+  fileEl.addEventListener("change", e => { const files=e.target.files; if(files&&files.length) ingestFiles(files); e.target.value=""; });
 
   ["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e=>{e.preventDefault();drop.classList.add("hot");}));
   ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e=>{e.preventDefault();drop.classList.remove("hot");}));
-  drop.addEventListener("drop", e => { const f=e.dataTransfer.files[0]; if(f) loadFile(f); });
+  drop.addEventListener("drop", e => { const files=e.dataTransfer.files; if(files&&files.length) ingestFiles(files); });
   window.addEventListener("dragover", e=>e.preventDefault());
   window.addEventListener("drop", e=>{ e.preventDefault();
-    if(S.img) return; const f=e.dataTransfer && e.dataTransfer.files[0]; if(f) loadFile(f); });
+    const files=e.dataTransfer && e.dataTransfer.files; if(files&&files.length) ingestFiles(files); });
 
-  function loadFile(file){
-    if(!file.type.startsWith("image/")){ status("That file isn't an image."); return; }
-    S.name = file.name.replace(/\.[^.]+$/,"") || "image";
-    const url = URL.createObjectURL(file);
-    const im = new Image();
-    im.onload = () => { URL.revokeObjectURL(url); setupImage(im); };
-    im.onerror = () => { URL.revokeObjectURL(url); status("Couldn't read that image."); };
-    im.src = url;
+  // Decode one File into a standalone item (its own base/result/mask) without touching BATCH or S.
+  function decodeFile(file){
+    return new Promise((resolve,reject)=>{
+      if(!file.type || !file.type.startsWith("image/")){ reject(new Error(file.name+" isn't an image")); return; }
+      const url = URL.createObjectURL(file);
+      const im = new Image();
+      im.onload = () => {
+        URL.revokeObjectURL(url);
+        const w=im.naturalWidth, h=im.naturalHeight;   // full native resolution — no downscaling
+        view.width=mask.width=w; view.height=mask.height=h;
+        ctxV.drawImage(im,0,0,w,h);
+        const base = ctxV.getImageData(0,0,w,h);
+        resolve({
+          id: Math.random().toString(36).slice(2),
+          name: file.name.replace(/\.[^.]+$/,"") || "image",
+          W:w, H:h, img: im,
+          base, result: new ImageData(new Uint8ClampedArray(base.data), w, h),
+          mask: new Uint8Array(w*h), maskImg: ctxM.createImageData(w,h),
+          status: "pending", thumb: null,
+        });
+      };
+      im.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Couldn't read "+file.name)); };
+      im.src = url;
+    });
   }
 
-  function setupImage(im){
-    // Full native resolution — no downscaling. The image is processed pixel-for-pixel.
-    const w = im.naturalWidth, h = im.naturalHeight;
-    S.W = w; S.H = h;
-    view.width = mask.width = w; view.height = mask.height = h;
-    ctxV.drawImage(im, 0, 0, w, h);
-    S.base = ctxV.getImageData(0,0,w,h);
-    S.result = new ImageData(new Uint8ClampedArray(S.base.data), w, h);
-    S.mask = new Uint8Array(w*h);
-    S.maskImg = ctxM.createImageData(w,h);
-    S.showOrig = false;
-    drop.classList.add("hidden"); $("wrap").classList.remove("hide");
+  // Point the shared working state S at this item's data (used both to open it for editing and,
+  // internally, while processing it during ingestion).
+  function loadItemIntoS(item){
+    S.img=item.img; S.W=item.W; S.H=item.H; S.base=item.base; S.result=item.result;
+    S.mask=item.mask; S.maskImg=item.maskImg; S.name=item.name; S.showOrig=false;
+    view.width=mask.width=item.W; view.height=mask.height=item.H;
     syncOverlay(); renderView(); requestOverlay();
-    $("mName").textContent = S.name;
-    $("mDims").innerHTML = `<b>${w}</b> × <b>${h}</b> px · full resolution`;
+  }
+  // Copy S's current fields back into its source item — needed because a couple of actions
+  // (Reset image) reassign S.result to a brand-new object rather than mutating in place.
+  function snapshotToItem(item){
+    item.base=S.base; item.result=S.result; item.mask=S.mask; item.maskImg=S.maskImg;
+    item.W=S.W; item.H=S.H; item.name=S.name;
+  }
+
+  function makeThumb(result,w,h){
+    const size=220, scale=size/Math.max(w,h);
+    const tw=Math.max(1,Math.round(w*scale)), th=Math.max(1,Math.round(h*scale));
+    const src=document.createElement("canvas"); src.width=w; src.height=h; src.getContext("2d").putImageData(result,0,0);
+    const out=document.createElement("canvas"); out.width=tw; out.height=th;
+    out.getContext("2d").drawImage(src,0,0,tw,th);
+    return out.toDataURL("image/jpeg",0.78);
+  }
+
+  // Detect + inpaint on whatever S currently points to. Pure — no DOM/status side effects —
+  // so both the single-image "Redo auto" button and bulk ingestion can share it.
+  function processCurrentPipeline(){
+    const found = autoDetect(true);
+    if(!found) return "nomatch";
+    try{ inpaint(); return "done"; }
+    catch(err){ console.error(err); return "error"; }
+  }
+
+  async function ingestFiles(fileList){
+    if(ingesting){ status("Still processing the previous batch — please wait."); return; }
+    const files = Array.from(fileList);
+    if(!files.length) return;
+    ingesting = true;
+    busy(true, files.length>1 ? `Processing 1 of ${files.length}` : "Cleaning image…");
+    await sleep(0);
+    let added=0;
+    for(let i=0;i<files.length;i++){
+      $("busyText").textContent = files.length>1 ? `Processing ${i+1} of ${files.length} — ${files[i].name}` : "Cleaning image…";
+      await sleep(0);
+      let item;
+      try{ item = await decodeFile(files[i]); }
+      catch(err){ console.error(err); continue; }
+      loadItemIntoS(item);
+      item.status = processCurrentPipeline();
+      item.thumb = makeThumb(item.result, item.W, item.H);
+      BATCH.items.push(item);
+      added++;
+      await sleep(0);
+    }
+    busy(false);
+    ingesting = false;
+    if(!added){ status("Couldn't read any of those files as images."); return; }
+    renderAfterIngest();
+  }
+
+  function renderAfterIngest(){
+    if(BATCH.items.length === 1) openItemUI(0);
+    else showGridUI();
+  }
+
+  /* ---------------- Single-item editor UI ---------------- */
+  function openItemUI(idx){
+    BATCH.activeIndex = idx;
+    const item = BATCH.items[idx];
+    loadItemIntoS(item);
+    drop.classList.add("hidden"); $("grid").classList.add("hidden"); $("wrap").classList.remove("hide");
+    $("itemPanel").classList.remove("hidden"); $("batchPanel").classList.add("hidden");
+    $("mName").textContent = item.name;
+    $("mDims").innerHTML = `<b>${item.W}</b> × <b>${item.H}</b> px · full resolution`;
+    $("backToGrid").classList.toggle("hidden", BATCH.items.length<=1);
     ["detect","remove","compare","reprocess","clearMask","resetImg"].forEach(id=>$(id).disabled=false);
-    $("download").disabled = true;
-    autoRun();
+    $("download").disabled = false;
+    if(item.status==="done") setState("ok","<b>Sparkle removed.</b> Download your image, or fine-tune below.");
+    else if(item.status==="nomatch"){ setState("warn","<b>No sparkle found automatically.</b> Open <b>Fine-tune</b> to brush over it, then remove."); $("tune").open=true; }
+    else if(item.status==="error") setState("warn","Something went wrong while removing. Try Fine-tune.");
+    status(BATCH.items.length>1 ? `Viewing ${item.name}.` : "Done automatically — click Download.");
+  }
+  $("backToGrid").addEventListener("click", ()=>{
+    if(BATCH.activeIndex>=0){
+      const item = BATCH.items[BATCH.activeIndex];
+      snapshotToItem(item);
+      item.thumb = makeThumb(item.result, item.W, item.H);
+    }
+    showGridUI();
+  });
+
+  /* ---------------- Bulk grid UI ---------------- */
+  function cardHTML(item, idx){
+    const cls = item.status==="done" ? "done" : "nomatch";
+    const label = item.status==="done" ? "Removed" : item.status==="error" ? "Error — click to fix" : "Not found — click to fix";
+    return `<button class="card" data-idx="${idx}" title="${label}">
+      <img class="thumb" src="${item.thumb}" alt="${item.name}" loading="lazy">
+      <span class="cmeta">
+        <span class="badge-dot ${cls}"></span>
+        <span class="cname">${item.name}</span>
+        <span class="cdl" data-dl="${idx}" role="button" aria-label="Download this image" title="Download this image">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        </span>
+      </span>
+    </button>`;
+  }
+  function renderGrid(){ $("grid").innerHTML = BATCH.items.map(cardHTML).join(""); }
+  $("grid").addEventListener("click", e=>{
+    const dl = e.target.closest("[data-dl]");
+    if(dl){ e.stopPropagation(); const it=BATCH.items[+dl.dataset.dl]; downloadImageData(it.result,it.W,it.H,it.name); return; }
+    const card = e.target.closest(".card");
+    if(card) openItemUI(+card.dataset.idx);
+  });
+  function showGridUI(){
+    drop.classList.add("hidden"); $("wrap").classList.add("hide"); $("grid").classList.remove("hidden");
+    $("itemPanel").classList.add("hidden"); $("batchPanel").classList.remove("hidden");
+    renderGrid();
+    const done = BATCH.items.filter(i=>i.status==="done").length;
+    const nomatch = BATCH.items.length - done;
+    $("batchCount").innerHTML = `<b>${BATCH.items.length}</b> image${BATCH.items.length===1?"":"s"}`;
+    $("batchBreakdown").textContent = `${done} removed · ${nomatch} not found`;
+    status("Click any image to review, fine-tune, or download it.");
   }
 
   /* ---------------- Automatic pipeline ---------------- */
@@ -440,22 +614,19 @@
   }
   function autoRun(){
     setState("", "Working…");
-    busy(true,"Detecting the logo…");
+    busy(true,"Cleaning image…");
     setTimeout(()=>{
-      const found = autoDetect(true);
-      if(found){
-        $("busyText").textContent = "Removing the logo…";
-        setTimeout(()=>{
-          try{ inpaint(); afterRemoval(true); }
-          catch(err){ console.error(err); setState("warn","Something went wrong while removing."); }
-          finally{ busy(false); }
-        }, 20);
-      } else {
-        busy(false);
+      const outcome = processCurrentPipeline();
+      if(BATCH.activeIndex>=0) BATCH.items[BATCH.activeIndex].status = outcome;
+      if(outcome==="done"){ afterRemoval(true); busy(false); return; }
+      if(outcome==="nomatch"){
         setState("warn","<b>No sparkle found automatically.</b> Open <b>Fine-tune</b> to brush over it, then remove.");
         $("tune").open = true;
         status("Tip: raise Sensitivity and hit Re-detect, or brush the logo manually.");
+      } else {
+        setState("warn","Something went wrong while removing. Try Fine-tune.");
       }
+      busy(false);
     }, 30);
   }
   function afterRemoval(auto){
@@ -765,9 +936,15 @@
   $("remove").addEventListener("click", () => {
     if(!S.mask.some(v=>v)){ status("Mask is empty — detect or brush the logo first."); return; }
     busy(true,"Erasing…");
-    setTimeout(()=>{ try{ inpaint(); afterRemoval(false); }
+    setTimeout(()=>{
+      try{
+        inpaint();
+        if(BATCH.activeIndex>=0) BATCH.items[BATCH.activeIndex].status = "done";
+        afterRemoval(false);
+      }
       catch(err){ status("Something went wrong during removal."); console.error(err); }
-      finally{ busy(false); } }, 30);
+      finally{ busy(false); }
+    }, 30);
   });
   $("reprocess").addEventListener("click", ()=>{
     S.result = new ImageData(new Uint8ClampedArray(S.base.data), S.W, S.H);
@@ -931,33 +1108,79 @@
   $("resetImg").addEventListener("click", ()=>{
     S.result = new ImageData(new Uint8ClampedArray(S.base.data), S.W, S.H);
     S.mask.fill(0); S.showOrig=false; renderView(); requestOverlay();
-    $("download").disabled = true;
+    if(BATCH.activeIndex>=0) BATCH.items[BATCH.activeIndex].status = "nomatch";
     setState("", "Image reset to original. Re-detect or brush to remove the logo.");
     status("Reset to the original image.");
   });
 
   /* ---------------- Download ---------------- */
-  $("download").addEventListener("click", async ()=>{
+  // Shared by the single-item Download button and each grid card's quick-download.
+  function downloadImageData(result, w, h, name){
+    return new Promise(resolve => {
+      const c=document.createElement("canvas"); c.width=w; c.height=h;
+      c.getContext("2d").putImageData(result,0,0);
+      const filename=(name||"image")+"-clean.png";
+      c.toBlob(async blob=>{
+        if(!blob){ status("Couldn't build the PNG."); resolve(false); return; }
+        let dl=null;
+        try{ dl = window.claude && claude.use ? await claude.use("downloads") : null; }catch(_){}
+        if(dl){
+          try{ await dl.save({filename, data:blob}); status("Saved."); resolve(true); return; }
+          catch(err){ if(err && err.code==="declined"){ status("Download cancelled."); resolve(false); return; } }
+        }
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement("a"); a.href=url; a.download=filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),1000);
+        status("Downloaded "+filename+".");
+        resolve(true);
+      }, "image/png");
+    });
+  }
+  $("download").addEventListener("click", () => {
     if(!S.result) return;
-    const c=document.createElement("canvas"); c.width=S.W; c.height=S.H;
-    c.getContext("2d").putImageData(S.result,0,0);
-    const filename=(S.name||"image")+"-clean.png";
-    c.toBlob(async blob=>{
-      if(!blob){ status("Couldn't build the PNG."); return; }
-      // Preferred path in the hosted app: the viewer-mediated downloads capability
+    downloadImageData(S.result, S.W, S.H, S.name);
+  });
+
+  /* ---------------- Bulk download (ZIP) ---------------- */
+  $("downloadAll").addEventListener("click", async () => {
+    if(!BATCH.items.length) return;
+    if(typeof fflate === "undefined"){ status("The zip library didn't load — check your connection and reload."); return; }
+    busy(true, `Building ZIP of ${BATCH.items.length} images…`);
+    await sleep(0);
+    try{
+      const files = {};
+      const used = new Set();
+      for(const item of BATCH.items){
+        const c=document.createElement("canvas"); c.width=item.W; c.height=item.H;
+        c.getContext("2d").putImageData(item.result,0,0);
+        const blob = await new Promise(res=>c.toBlob(res,"image/png"));
+        const buf = new Uint8Array(await blob.arrayBuffer());
+        let base=(item.name||"image")+"-clean.png", name=base, n=1;
+        while(used.has(name)) name = (item.name||"image")+"-clean-"+(n++)+".png";
+        used.add(name);
+        files[name] = buf;
+      }
+      const zipped = fflate.zipSync(files, {level:0});   // PNGs are already compressed — store, don't re-deflate
+      const blob = new Blob([zipped], {type:"application/zip"});
+      const filename = "sparkle-eraser-batch.zip";
       let dl=null;
       try{ dl = window.claude && claude.use ? await claude.use("downloads") : null; }catch(_){}
       if(dl){
-        try{ await dl.save({filename, data:blob}); status("Saved."); return; }
-        catch(err){ if(err && err.code==="declined"){ status("Download cancelled."); return; } }
+        try{ await dl.save({filename, data:blob}); status("ZIP saved."); busy(false); return; }
+        catch(err){ if(err && err.code==="declined"){ status("Download cancelled."); busy(false); return; } }
       }
-      // Fallback: plain link (works when opened as a local file)
       const url=URL.createObjectURL(blob);
       const a=document.createElement("a"); a.href=url; a.download=filename;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(()=>URL.revokeObjectURL(url),1000);
-      status("Downloaded. If nothing appeared, check your browser's download bar.");
-    }, "image/png");
+      status("ZIP downloaded — "+BATCH.items.length+" images.");
+    }catch(err){
+      console.error(err);
+      status("Couldn't build the ZIP — see the console for details.");
+    }finally{
+      busy(false);
+    }
   });
 
 })();

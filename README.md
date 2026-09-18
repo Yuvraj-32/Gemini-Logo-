@@ -8,7 +8,18 @@ A browser-based tool that automatically detects the Gemini / Imagen **sparkle lo
 
 Open `index.html` in any modern browser, or host it (e.g. GitHub Pages) and visit the page.
 
-Then just **upload an image** — detection and removal run automatically, and the **Download** button gives you the result.
+Then just **upload an image (or several at once)** — detection and removal run automatically, and the **Download** button gives you the result.
+
+## Bulk mode
+
+Drop or select more than one image and the page switches to a grid: each one is processed automatically, with a status dot (removed / not found) on its thumbnail. From there you can:
+
+- Click any card to open it in the full editor — compare before/after, fine-tune, or download it individually — then **← All images** to go back.
+- Use the small download icon on a card to grab just that one image without opening it.
+- **Download all (ZIP)** to get every cleaned image (including any left untouched because nothing was detected) in one file, at full resolution.
+- **Add more images** at any time — they're appended to the same batch.
+
+Zipping is done client-side with [fflate](https://github.com/101arrowz/fflate) (MIT, loaded from a CDN), storing the already-compressed PNGs without re-deflating them.
 
 ## How it works
 
