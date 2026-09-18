@@ -4,3 +4,6 @@ Thumbs.db
 *.swp
 .vscode/
 .idea/
+
+# local smoke-test fixtures — never committed
+__test_sample*
