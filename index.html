@@ -894,16 +894,105 @@
     return mask;
   }
 
+  // Difference-of-box-blurs matched filter: locates a sparkle-scale bright feature even when its
+  // contrast is far too low to survive hard thresholding (a translucent mark on busy/bright fabric,
+  // silk highlights, etc). A small-radius local average minus a large-radius one cancels out slow
+  // gradients — fold shading varies over hundreds of px — while lighting up anything roughly the
+  // mark's own size. Uses a summed-area table so each query is O(1) regardless of radius.
+  function dogPeak(src,W,H,cx,cy,win,rSmall,rLarge){
+    const x0=Math.max(rLarge,cx-win), x1=Math.min(W-1-rLarge,cx+win);
+    const y0=Math.max(rLarge,cy-win), y1=Math.min(H-1-rLarge,cy+win);
+    if(x0>=x1||y0>=y1) return null;
+    const px0=x0-rLarge, py0=y0-rLarge, px1=x1+rLarge, py1=y1+rLarge;
+    const pw=px1-px0+1, ph=py1-py0+1;
+    const sat=new Float64Array((pw+1)*(ph+1));
+    for(let y=0;y<ph;y++){
+      let rowsum=0;
+      for(let x=0;x<pw;x++){
+        const gi=((y+py0)*W+(x+px0))*4;
+        rowsum += 0.299*src[gi]+0.587*src[gi+1]+0.114*src[gi+2];
+        sat[(y+1)*(pw+1)+(x+1)] = sat[y*(pw+1)+(x+1)] + rowsum;
+      }
+    }
+    const boxAvg=(x,y,r)=>{
+      const lx0=x-r-px0, ly0=y-r-py0, lx1=x+r-px0, ly1=y+r-py0;
+      const A=sat[ly0*(pw+1)+lx0], B=sat[ly0*(pw+1)+lx1+1], C=sat[(ly1+1)*(pw+1)+lx0], D=sat[(ly1+1)*(pw+1)+lx1+1];
+      return (D-B-C+A)/((lx1-lx0+1)*(ly1-ly0+1));
+    };
+    let best=null;
+    for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
+      const dog = boxAvg(x,y,rSmall) - boxAvg(x,y,rLarge);
+      if(!best||dog>best.dog) best={x,y,dog};
+    }
+    return best;
+  }
+
+  // The sparkle is a fixed, known icon — once we're confident one is genuinely present at (cx,cy),
+  // stamp that exact shape rather than trust noisy segmentation to trace its edges. Segmentation
+  // either over-grows (a weak edge threshold never stops on a slowly-varying background) or
+  // under-covers (a very faint mark only pokes above threshold at its brightest core) depending on
+  // the image; the known shape has neither failure mode.
+  function stampMask(W,H,cx,cy,R){
+    const pad=4, size=Math.ceil(R*2+pad*2);
+    const cv=document.createElement("canvas"); cv.width=cv.height=size;
+    const c=cv.getContext("2d");
+    c.translate(size/2,size/2);
+    c.beginPath();
+    c.moveTo(0,-R);
+    c.quadraticCurveTo(0,0, R,0);
+    c.quadraticCurveTo(0,0, 0,R);
+    c.quadraticCurveTo(0,0, -R,0);
+    c.quadraticCurveTo(0,0, 0,-R);
+    c.closePath(); c.fillStyle="#fff"; c.fill();
+    const d=c.getImageData(0,0,size,size).data;
+    const mask=new Uint8Array(W*H);
+    const ox=Math.round(cx-size/2), oy=Math.round(cy-size/2);
+    for(let y=0;y<size;y++) for(let x=0;x<size;x++){
+      if(d[(y*size+x)*4+3]>40){
+        const gx=ox+x, gy=oy+y;
+        if(gx>=0&&gy>=0&&gx<W&&gy<H) mask[gy*W+gx]=1;
+      }
+    }
+    return mask;
+  }
+
   function autoDetect(silent){
     if(!TEMPLATES) TEMPLATES = buildTemplates();
     const {W,H} = S, src = S.result.data, minD = Math.min(W,H);
     const sens = +$("sens").value;
     const minIoU = 0.16 + (1-sens)*0.16;        // higher sensitivity -> more lenient (hue/brightness gate carries most of the false-positive rejection)
     const thrList = [16,24,34,48,70,100];       // sweep contrast levels, including subtle/translucent marks
+    const thrListFine = [8,12,16,24,34,48,70,100];
     let best=null;
     const consider = r => { if(r && (!best || r.score>best.score)) best=r; };
 
-    // Bottom band (full width) — primary, since the watermark sits at the bottom
+    // PRIORITY ANCHOR: the watermark sits at a very consistent relative position (~90% across,
+    // ~90% down) regardless of subject. Locate it precisely with the DoG matched filter first —
+    // robust even when the mark is too low-contrast for hard thresholding — then confirm with the
+    // usual shape/colour check in a small box centred exactly there (small enough that unrelated
+    // bright fabric elsewhere can't drag the local background estimate off). On confirmation, stamp
+    // the known shape at the confirmed centre instead of using the (possibly noisy) segmented blob.
+    {
+      const acx = Math.round(W*0.898), acy = Math.round(H*0.898);
+      const rSmall = Math.max(6,Math.round(minD*0.014)), rLarge = Math.max(18,Math.round(minD*0.04));
+      const peak = dogPeak(src,W,H,acx,acy,Math.round(minD*0.09),rSmall,rLarge);
+      const cx = peak ? peak.x : acx, cy = peak ? peak.y : acy;
+      const aBox = Math.round(minD*0.11), aSpan = Math.round(minD*0.13);
+      const ax0=Math.max(0,Math.round(cx-aSpan/2)), ay0=Math.max(0,Math.round(cy-aSpan/2));
+      const ax1=Math.min(W,Math.round(cx+aSpan/2)), ay1=Math.min(H,Math.round(cy+aSpan/2));
+      const anchorHit = scanRegion(src,W,H, ax0,ay0,ax1,ay1,
+        {thrList:thrListFine, sizeRef:aBox, minSize:0.08, maxSize:0.95, minIoU:Math.max(0.12,minIoU-0.04), corner:{cx,cy}});
+      if(anchorHit){
+        const R = minD*0.031;
+        S.mask.fill(0);
+        const stamp = dilate(stampMask(W,H,cx,cy,R), W, H, 3);
+        S.mask.set(stamp);
+        requestOverlay();
+        return true;
+      }
+    }
+
+    // Bottom band (full width) — other placements (Imagen bottom-center, non-standard corner, etc.)
     const band = Math.max(48, Math.round(minD*0.26));
     consider(scanRegion(src,W,H, 0, Math.max(0,H-band), W, H,
       {thrList, sizeRef:band, minSize:0.10, maxSize:1.3, minIoU, bottomRef:H}));
